@@ -336,12 +336,12 @@
         <mesh filename="../meshes/ur3e/visual/base.dae"/>
       </geometry>
     </visual>
-    <collision>
+    <!-- <collision>
       <origin rpy="0 0 3.141592653589793" xyz="0 0 0"/>
       <geometry>
         <mesh filename="../meshes/ur3e/collision/base.stl"/>
       </geometry>
-    </collision>
+    </collision> -->
     <inertial>
       <mass value="2.0"/>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -355,12 +355,12 @@
         <mesh filename="../meshes/ur3e/visual/shoulder.dae"/>
       </geometry>
     </visual>
-    <collision>
+    <!-- <collision>
       <origin rpy="0 0 3.141592653589793" xyz="0 0 0"/>
       <geometry>
         <mesh filename="../meshes/ur3e/collision/shoulder.stl"/>
       </geometry>
-    </collision>
+    </collision> -->
     <inertial>
       <mass value="2.0"/>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -374,12 +374,12 @@
         <mesh filename="../meshes/ur3e/visual/upperarm.dae"/>
       </geometry>
     </visual>
-    <collision>
+    <!-- <collision>
       <origin rpy="1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0.12"/>
       <geometry>
         <mesh filename="../meshes/ur3e/collision/upperarm.stl"/>
       </geometry>
-    </collision>
+    </collision> -->
     <inertial>
       <mass value="3.42"/>
       <origin rpy="0 1.5707963267948966 0" xyz="-0.121825 0.0 0.12"/>
@@ -393,12 +393,12 @@
         <mesh filename="../meshes/ur3e/visual/forearm.dae"/>
       </geometry>
     </visual>
-    <collision>
+    <!-- <collision>
       <origin rpy="1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0.027"/>
       <geometry>
         <mesh filename="../meshes/ur3e/collision/forearm.stl"/>
       </geometry>
-    </collision>
+    </collision> -->
     <inertial>
       <mass value="1.26"/>
       <origin rpy="0 1.5707963267948966 0" xyz="-0.1066 0.0 0.027"/>
@@ -412,12 +412,12 @@
         <mesh filename="../meshes/ur3e/visual/wrist1.dae"/>
       </geometry>
     </visual>
-    <collision>
+    <!-- <collision>
       <origin rpy="1.5707963267948966 0 0" xyz="0 0 -0.104"/>
       <geometry>
         <mesh filename="../meshes/ur3e/collision/wrist1.stl"/>
       </geometry>
-    </collision>
+    </collision> -->
     <inertial>
       <mass value="0.8"/>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -431,12 +431,12 @@
         <mesh filename="../meshes/ur3e/visual/wrist2.dae"/>
       </geometry>
     </visual>
-    <collision>
+    <!-- <collision>
       <origin rpy="0 0 0" xyz="0 0 -0.08535"/>
       <geometry>
         <mesh filename="../meshes/ur3e/collision/wrist2.stl"/>
       </geometry>
-    </collision>
+    </collision> -->
     <inertial>
       <mass value="0.8"/>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -450,12 +450,12 @@
         <mesh filename="../meshes/ur3e/visual/wrist3.dae"/>
       </geometry>
     </visual>
-    <collision>
+    <!-- <collision>
       <origin rpy="1.5707963267948966 0 0" xyz="0 0 -0.0921"/>
       <geometry>
         <mesh filename="../meshes/ur3e/collision/wrist3.stl"/>
       </geometry>
-    </collision>
+    </collision> -->
     <inertial>
       <mass value="0.35"/>
       <origin rpy="0 0 0" xyz="0.0 0.0 -0.02"/>
