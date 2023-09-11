@@ -37,7 +37,18 @@ from pydrake.examples import (
     StabilizingLQRController,
 )
 
-
+import numpy as np
+from pydrake.all import (
+    DiagramBuilder,
+    MeshcatVisualizer,
+    RigidTransform,
+    RotationMatrix,
+    SceneGraph,
+    Simulator,
+    StartMeshcat,
+)
+from pydrake.examples import PendulumGeometry, PendulumPlant
+from libs.meshcat_utils import MeshcatSliders
 def MakeUr3eRobot():
     builder = DiagramBuilder()
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(time_step=0.0))
@@ -62,8 +73,46 @@ def Ur3eRobotExample():
         simulator.AdvanceTo(simulator.get_context().get_time() + 1.0)
     # meshcat.DeleteAddedControls()
 
+def pendulum_simulation():
+    builder = DiagramBuilder()
+    pendulum = builder.AddSystem(PendulumPlant())
+    meshcat = StartMeshcat()
+    # Setup visualization
+    scene_graph = builder.AddSystem(SceneGraph())
+    PendulumGeometry.AddToBuilder(
+        builder, pendulum.get_state_output_port(), scene_graph
+    )
+    MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
+    meshcat.Delete()
+    meshcat.Set2dRenderMode(
+        X_WC=RigidTransform(RotationMatrix.MakeZRotation(np.pi), [0, 1, 0])
+    )
+
+    # Setup slider input
+    meshcat.AddSlider("u", min=-5, max=5, step=0.1, value=0.0)
+    torque_system = builder.AddSystem(MeshcatSliders(meshcat, ["u"]))
+    builder.Connect(torque_system.get_output_port(), pendulum.get_input_port())
+
+    diagram = builder.Build()
+
+    # Set up a simulator to run this diagram
+    simulator = Simulator(diagram)
+    context = simulator.get_mutable_context()
+
+    meshcat.AddButton("Stop Simulation")
+
+    # Set the initial conditions
+    context.SetContinuousState([0.5, 0])  # theta, thetadot
+
+    simulator.set_target_realtime_rate(1.0)
+
+    print("Use the slider in the MeshCat controls to apply elbow torque.")
+    print("Press 'Stop Simulation' in MeshCat to continue.")
+    while True:
+        simulator.AdvanceTo(simulator.get_context().get_time() + 1.0)
+
 if __name__ == "__main__":
-    Ur3eRobotExample()
+    pendulum_simulation()
 # from pydrake.visualization.model_visualizer import MeshcatVisualizer
 
 # Build a system diagram for the simulation.

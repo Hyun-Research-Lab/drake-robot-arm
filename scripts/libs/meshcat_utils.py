@@ -4,7 +4,7 @@ from pydrake.geometry import Meshcat, Cylinder, Rgba, Sphere
 # from pydrake.solvers import BoundingBoxConstraint
 import time 
 import numpy as np
-
+from functools import partial
 # imports for the pose sliders
 from collections import namedtuple
 from pydrake.common.value import AbstractValue
@@ -32,6 +32,43 @@ def StartMeshcat(open_window=False):
         webbrowser.open(web_url)
         return meshcat
 
+class MeshcatSliders(LeafSystem):
+    """
+    A system that outputs the ``value``s from meshcat sliders.
+
+    .. pydrake_system::
+
+      name: MeshcatSliderSystem
+      output_ports:
+      - slider_group_0
+      - ...
+      - slider_group_{N-1}
+    """
+
+    def __init__(self, meshcat, slider_names):
+        """
+        An output port is created for each element in the list `slider_names`.
+        Each element of `slider_names` must itself be an iterable collection
+        (list, tuple, set, ...) of strings, with the names of sliders that have
+        *already* been added to Meshcat via Meshcat.AddSlider().
+
+        The same slider may be used in multiple ports.
+        """
+        LeafSystem.__init__(self)
+
+        self._meshcat = meshcat
+        self._sliders = slider_names
+        for i, slider_iterable in enumerate(self._sliders):
+            port = self.DeclareVectorOutputPort(
+                f"slider_group_{i}",
+                len(slider_iterable),
+                partial(self.DoCalcOutput, port_index=i),
+            )
+            port.disable_caching_by_default()
+
+    def DoCalcOutput(self, context, output, port_index):
+        for i, slider in enumerate(self._sliders[port_index]):
+            output[i] = self._meshcat.GetSliderValue(slider)
 
 class MeshcatPoseSliders(LeafSystem):
     """
