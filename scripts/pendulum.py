@@ -27,15 +27,6 @@ from pydrake.all import (
     namedview,
 )
 
-from pydrake.examples import (
-    AcrobotGeometry,
-    AcrobotInput,
-    AcrobotPlant,
-    AcrobotState,
-    QuadrotorGeometry,
-    QuadrotorPlant,
-    StabilizingLQRController,
-)
 
 import numpy as np
 from pydrake.all import (
@@ -45,10 +36,9 @@ from pydrake.all import (
     RotationMatrix,
     SceneGraph,
     Simulator,
-    StartMeshcat,
 )
 from pydrake.examples import PendulumGeometry, PendulumPlant
-from libs.meshcat_utils import MeshcatSliders
+from libs.meshcat_utils import MeshcatSliders#, #StartMeshcat
 def MakeUr3eRobot():
     builder = DiagramBuilder()
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(time_step=0.0))
