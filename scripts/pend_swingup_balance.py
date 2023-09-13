@@ -109,7 +109,6 @@ def energy_sim():
 
     meshcat = StartMeshcat()
     MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
-    # meshcat.Delete()
     meshcat.Set2dRenderMode(
         X_WC=RigidTransform(RotationMatrix.MakeZRotation(np.pi), [0, 1, 0])
     )
@@ -122,23 +121,34 @@ def energy_sim():
     builder.Connect(
         controller.get_output_port(0), saturation.get_input_port(0)
     )
-
     diagram = builder.Build()
 
     # Set up a simulator to run this diagram
     simulator = Simulator(diagram)
     context = simulator.get_mutable_context()
 
-    meshcat.AddButton("Stop Simulation")
+    meshcat.AddButton("Stop Simulation (Q)", "KeyQ")
+    meshcat.AddButton("Restart (Space)", "Space")
+    numClicks = 0
 
     # Set the initial conditions
     context.SetContinuousState([0.1, 0])  # theta, thetadot
 
     simulator.set_target_realtime_rate(1.0)
 
-    while meshcat.GetButtonClicks("Stop Simulation") < 1:
-        simulator.AdvanceTo(simulator.get_context().get_time() + 1.0)
+    while True:
+        
+        if meshcat.GetButtonClicks("Stop Simulation (Q)") == 1:
+            break
 
+        if meshcat.GetButtonClicks("Restart (Space)") > numClicks:
+            numClicks += 1
+            context.SetContinuousState([0.1, 0])
+            context.SetTime(0)
+            simulator.Initialize()
+        
+        simulator.AdvanceTo(simulator.get_context().get_time() + 1)
+        
     meshcat.DeleteAddedControls()
 
 if __name__ == '__main__':
