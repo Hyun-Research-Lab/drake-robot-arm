@@ -66,4 +66,7 @@ def run_simulation(sim_time_step):
 # Run the simulation with a small time step. Try gradually increasing it!
 meshcat = StartMeshcat()
 meshcat.AddButton('say_hello')
-run_simulation(sim_time_step=0.0001)
+run_simulation(sim_time_step=0.001)
+
+while True:
+    pass
