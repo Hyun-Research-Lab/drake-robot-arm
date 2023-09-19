@@ -2,7 +2,7 @@
 <sdf version="1.7">
   <model name="table">
     <frame name="table_top_center">
-      <pose>0 0 0 0 0 0</pose>
+      <pose>0 0 0 0 .7 0</pose>
     </frame>
     <link name="table_body">
       <visual name="table_visual">
