@@ -9,6 +9,20 @@ from pydrake.multibody.plant import AddMultibodyPlantSceneGraph
 from pydrake.systems.analysis import Simulator
 from pydrake.systems.framework import DiagramBuilder
 from pydrake.visualization import AddDefaultVisualization, ModelVisualizer
+from pydrake.all import (
+    DiagramBuilder,
+    Linearize,
+    LinearQuadraticRegulator,
+    MeshcatVisualizer,
+    Saturation,
+    SceneGraph,
+    Simulator,
+    VectorLogSink,
+    VectorSystem,
+    wrap_to,
+    RotationMatrix,
+)
+
 
 def create_scene(sim_time_step):
     # Clean up the Meshcat instance.
@@ -27,6 +41,9 @@ def create_scene(sim_time_step):
 
     # Weld the table to the world so that it's fixed during the simulation.
     table_frame = plant.GetFrameByName("table_top_center")
+    # X = RigidTransform(
+        # RollPitchYaw(np.asarray([45, 45, 45]) * np.pi / 180), p=[0,0,0])
+    # X_WorldCylinder = X_WorldTable.multiply(X_TableCylinder)
     plant.WeldFrames(plant.world_frame(), table_frame)
     # Finalize the plant after loading the scene.
     plant.Finalize()
@@ -44,7 +61,11 @@ def create_scene(sim_time_step):
     plant.SetDefaultFreeBodyPose(cylinder, X_WorldCylinder)
     
     # Add visualization to see the geometries.
-    AddDefaultVisualization(builder=builder, meshcat=meshcat)
+    # AddDefaultVisualization(builder=builder, meshcat=meshcat)
+    MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
+    meshcat.Set2dRenderMode(
+        X_WC=RigidTransform(RotationMatrix.MakeZRotation(np.pi), [0, 1, 0])
+    )
 
     diagram = builder.Build()
     return diagram

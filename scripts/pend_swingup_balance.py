@@ -115,12 +115,11 @@ def energy_sim():
 
     # wire it all up
     saturation = builder.AddSystem(Saturation(min_value=[-1], max_value=[1]))
-    builder.Connect(saturation.get_output_port(0), pendulum.get_input_port(0))
     controller = builder.AddSystem(SwingUpAndBalanceController(pendulum))
+
+    builder.Connect(saturation.get_output_port(0), pendulum.get_input_port(0))
     builder.Connect(pendulum.get_output_port(0), controller.get_input_port(0))
-    builder.Connect(
-        controller.get_output_port(0), saturation.get_input_port(0)
-    )
+    builder.Connect(controller.get_output_port(0), saturation.get_input_port(0))
     diagram = builder.Build()
 
     # Set up a simulator to run this diagram
