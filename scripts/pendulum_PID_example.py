@@ -6,7 +6,7 @@ from pydrake.symbolic import Variable
 from pydrake.systems.primitives import SymbolicVectorSystem
 import numpy as np
 from pydrake.systems.analysis import Simulator
-from pydrake.systems.framework import DiagramBuilder
+from pydrake.systems.framework import Context, DiagramBuilder, SystemOutput
 from pydrake.systems.primitives import LogVectorOutput
 from pydrake.systems.controllers import PidController
 from pydrake.systems.framework import LeafSystem
@@ -213,7 +213,83 @@ def pendulum_PID_vector_system():
     plt.legend(["theta", "dtheta"])
     plt.show()
 
+def pendulum_double_leaf():
+
+    # create the pendulum as a leaf system
+    # example: https://github.com/RussTedrake/underactuated/blob/master/underactuated/quadrotor2d.py#L44
+    class Pendulum(LeafSystem):
+        def __init__(self):
+            LeafSystem.__init__(self)
+            self.DeclareVectorInputPort("u", 1)
+            state_index = self.DeclareContinuousState(1,1,0)
+            self.DeclareStateOutputPort("x", state_index)
+
+        def DoCalcTimeDerivatives(self, context, derivatives):
+            x = context.get_continuous_state_vector().CopyToVector()
+            u = self.EvalVectorInput(context, 0).CopyToVector()[0]
+
+            qdot = x[1]
+            qddot = -9.81 / 1 * np.sin(x[0]) + u
+
+            derivatives.get_mutable_vector().SetFromVector(np.array([qdot, qddot]))
+
+    class Controller(LeafSystem):
+        def __init__(self):
+            LeafSystem.__init__(self)
+            self.DeclareVectorInputPort("u", 2)
+            self.DeclareVectorOutputPort("y", 1, self.CalcOutput)
+
+        def CalcOutput(self, context, output):
+            y = 4
+            output.SetAtIndex(0, y)
+
+
+    # Create Block Diagram containing our system:
+    builder = DiagramBuilder()
+
+    # Add Pendulum System to Diagram:
+    pendulum = builder.AddSystem(Pendulum())
+
+    controller = builder.AddSystem(Controller())
+    builder.Connect(pendulum.get_output_port(), controller.get_input_port())
+    builder.Connect(controller.get_output_port(), pendulum.get_input_port())
+    
+    # Log the States of the Pendulum:
+    logger = LogVectorOutput(pendulum.get_output_port(0), builder)
+    logger.set_name("logger")
+
+    diagram = builder.Build()
+    diagram.set_name("diagram")
+
+    # Set Simulator to Run Diagram:
+    simulator = Simulator(diagram)
+    context = simulator.get_mutable_context()
+
+    # First Extract the subsystem context for the pendulum:
+    pendulum_context = diagram.GetMutableSubsystemContext(pendulum, context)
+    pendulum_context.get_mutable_continuous_state_vector().SetFromVector([np.pi/2, 0.0])
+
+    # Simulate for 20 seconds.
+    simulator.AdvanceTo(20)
+
+    # Grab results from Logger:
+    log = logger.FindLog(simulator.get_context())
+    time = log.sample_times()
+    data = log.data().transpose()
+    theta = data[:, 0]
+    dtheta = data[:, 1]
+
+    import matplotlib.pyplot as plt
+    plt.figure()
+    plt.plot(time, theta, color='r')
+    plt.plot(time, dtheta, color='b')
+    plt.xlabel("time (s)")
+    plt.grid()
+    plt.legend(["theta", "dtheta"])
+    plt.show()
+
 if __name__ == "__main__":
     #open_loop_pendulum()
     #pendulum_PID()
-    pendulum_PID_vector_system()
+    #pendulum_PID_vector_system()
+    pendulum_double_leaf()

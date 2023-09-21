@@ -3,7 +3,7 @@ from pydrake.common.containers import namedview
 from pydrake.common.value import Value
 from pydrake.math import RigidTransform, RotationMatrix
 from pydrake.systems.analysis import Simulator
-from pydrake.systems.framework import BasicVector, LeafSystem
+from pydrake.systems.framework import BasicVector, Context, LeafSystem, SystemOutput
 
 from copy import copy
 import matplotlib.pyplot as plt
@@ -28,48 +28,38 @@ from pydrake.all import (
     StartMeshcat,
 )
 
-from pydrake.examples import PendulumGeometry, PendulumParams, PendulumPlant
-
-from libs.meshcat_utils import MeshcatSliders
-
-# Define the system. xddot = u
 class BlockDin(LeafSystem):
     def __init__(self):
-        super().__init__()
-        self.DeclareContinuousState(2) # Two state variables, x and xdot
-
-        # pass a dependency ticket when declaring the vector output port
-        self.DeclareVectorOutputPort(name="y", size=1, calc=self.CalcOutput)
-        self.DeclareVectorInputPort("u", 1)
+        LeafSystem.__init__(self)
+        self.DeclareVectorInputPort("u_din", 1)
+        state_index = self.DeclareContinuousState(1,1,0) # Two state variables, x and xdot
+        self.DeclareStateOutputPort("x", state_index)
         
     def DoCalcTimeDerivatives(self, context, derivatives):
 
         # get state from context
-        x = context.get_continuous_state_vector().GetAtIndex(0)
-        xdot = context.get_continuous_state_vector().GetAtIndex(1)
+        x = context.get_continuous_state_vector().CopyToVector()
 
         # get input port from context
-        u = self.EvalVectorInput(context, 0).GetAtIndex(0)
+        u = self.EvalVectorInput(context, 0).CopyToVector()[0]
+
+        xdot = x[1]
         xddot = u
 
         # set the derivative of xdot equal to xddot
-        derivatives.get_mutable_vector().SetAtIndex(0, xdot)
-        derivatives.get_mutable_vector().SetAtIndex(1, xddot)
+        derivatives.get_mutable_vector().SetFromVector(np.array([xdot,xddot]))
+
+class StupidController(LeafSystem):
+    def __init__(self):
+        super().__init__()
+        self.DeclareVectorOutputPort("y_control", 1, calc=self.CalcOutput)
+        self.DeclareVectorInputPort("u_control", 2)
 
     def CalcOutput(self, context, output):
-        y = context.get_continuous_state_vector().GetAtIndex(0)
-        output = y
-
-
-class StupidController(VectorSystem):
-    def __init__(self):
-        VectorSystem.__init__(self,1,1)
-
-    def DoCalcVectorOutput(self, context, state, unused, output):
-        if state > 0:
-            output[:] = -1
-        else:    
-            output[:] = 1
+        # get the current value of the vector input port
+        u = self.EvalVectorInput(context, 0).CopyToVector()[0]
+        y = -1 if u > 0 else 1
+        output.SetAtIndex(0, y)
 
 # create the diagram
 builder = DiagramBuilder()
@@ -82,32 +72,40 @@ builder.Connect(plant.get_output_port(0), controller.get_input_port(0))
 builder.Connect(controller.get_output_port(0), plant.get_input_port(0))
 
 # Setup visualization
-scene_graph = builder.AddSystem(SceneGraph())
-meshcat = StartMeshcat()
-MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
-meshcat.Set2dRenderMode(
-    X_WC=RigidTransform(RotationMatrix.MakeZRotation(np.pi), [0, 1, 0])
-)
+# scene_graph = builder.AddSystem(SceneGraph())
+# meshcat = StartMeshcat()
+# MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
+# meshcat.Set2dRenderMode(
+#     X_WC=RigidTransform(RotationMatrix.MakeZRotation(np.pi), [0, 1, 0])
+# )
 
 # create logger to capture the plant output
 logger = LogVectorOutput(plant.get_output_port(0), builder)
 
-diagram = builder.Build() # error!
+diagram = builder.Build()
+diagram_context = diagram.CreateDefaultContext()
 
 # # Set up a simulator to run this diagram
-# simulator = Simulator(diagram)
+simulator = Simulator(diagram, diagram_context)
+context = simulator.get_mutable_context()
 # simulator.set_target_realtime_rate(1.0)
 
-# context = simulator.get_mutable_context()
-# context.SetContinuousState([3,0])
+plant_context = diagram.GetMutableSubsystemContext(plant, context)
+plant_context.get_mutable_continuous_state_vector().SetFromVector([np.pi/2, 0.0])
 
-# while True:
-#     simulator.AdvanceTo(simulator.get_context().get_time() + 1)
+# Run the simulation.
+simulator.Initialize()
+simulator.AdvanceTo(10.0)
 
-# # Run the simulation.
-# simulator.AdvanceTo(4.0)
+# print sample times and data
+log = logger.FindLog(context)
+print(log.sample_times())
+print(log.data())
 
-# # print sample times and data
-# log = logger.FindLog(context)
-# print(log.sample_times())
-# print(log.data())
+# plot the data with matplotlib
+plt.figure()
+plt.plot(log.sample_times(), log.data().transpose())
+plt.legend(["x", "x_dot"])
+plt.xlabel("time (s)")
+plt.grid()
+plt.show()
