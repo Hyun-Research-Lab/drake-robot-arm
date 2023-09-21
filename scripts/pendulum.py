@@ -39,73 +39,11 @@ from pydrake.all import (
 )
 from pydrake.examples import PendulumGeometry, PendulumPlant
 from libs.meshcat_utils import MeshcatSliders#, #StartMeshcat
-def MakeUr3eRobot():
-    builder = DiagramBuilder()
-    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(time_step=0.0))
-    # plant = builder.AddSystem(MultibodyPlant(0.0))
-    parser = Parser(plant)
-    curr_file_path = os.path.dirname(os.path.abspath(__file__))
-    parser.AddModelFromFile(os.path.join(curr_file_path, "../urdf/ur3e_robot.urdf"))
-    plant.Finalize()
-    meshcat = StartMeshcat()
-    MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
-    return builder.Build(), plant
-
-def Ur3eRobotExample():
-    diagram, plant = MakeUr3eRobot()
-    simulator = Simulator(diagram)
-    context = simulator.get_mutable_context()
-    simulator.set_target_realtime_rate(1.0)
-    print("starting simulation")
-    # meshcat.AddButton("Reset Simulation")
-    # while meshcat.GetButtonClicks("Reset Simulation") < 1:
-    while True:
-        simulator.AdvanceTo(simulator.get_context().get_time() + 1.0)
-    # meshcat.DeleteAddedControls()
-
-def pendulum_simulation():
-    builder = DiagramBuilder()
-    pendulum = builder.AddSystem(PendulumPlant())
-    meshcat = StartMeshcat()
-    # Setup visualization
-    scene_graph = builder.AddSystem(SceneGraph())
-    PendulumGeometry.AddToBuilder(
-        builder, pendulum.get_state_output_port(), scene_graph
-    )
-    MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
-    meshcat.Delete()
-    meshcat.Set2dRenderMode(
-        X_WC=RigidTransform(RotationMatrix.MakeZRotation(np.pi), [0, 1, 0])
-    )
-
-    # Setup slider input
-    meshcat.AddSlider("u", min=-5, max=5, step=0.1, value=0.0)
-    torque_system = builder.AddSystem(MeshcatSliders(meshcat, ["u"]))
-    builder.Connect(torque_system.get_output_port(), pendulum.get_input_port())
-
-    diagram = builder.Build()
-
-    # Set up a simulator to run this diagram
-    simulator = Simulator(diagram)
-    context = simulator.get_mutable_context()
-
-    meshcat.AddButton("Stop Simulation")
-
-    # Set the initial conditions
-    context.SetContinuousState([0.5, 0])  # theta, thetadot
-
-    simulator.set_target_realtime_rate(1.0)
-
-    print("Use the slider in the MeshCat controls to apply elbow torque.")
-    print("Press 'Stop Simulation' in MeshCat to continue.")
-    while True:
-        simulator.AdvanceTo(simulator.get_context().get_time() + 1.0)
 
 from pydrake.examples import PendulumGeometry, PendulumParams, PendulumPlant
 from copy import copy
 
 import matplotlib.pyplot as plt
-import mpld3
 import numpy as np
 from IPython.display import display
 from pydrake.all import (
@@ -149,7 +87,6 @@ class EnergyShapingController(VectorSystem):
         output[:] = params.damping() * thetadot - 0.1 * thetadot * (
             total_energy - self.desired_energy
         )
-
 
 def PhasePlot(pendulum):
     phase_plot = plt.figure()
@@ -324,7 +261,43 @@ def swing_up_and_balance_demo(show=False):
     # ax.set_ylim(-5.0, 5.0)
     # display(mpld3.display())
 
+def pendulum_simulation():
+    builder = DiagramBuilder()
+    pendulum = builder.AddSystem(PendulumPlant())
+    meshcat = StartMeshcat()
+    # Setup visualization
+    scene_graph = builder.AddSystem(SceneGraph())
+    PendulumGeometry.AddToBuilder(
+        builder, pendulum.get_state_output_port(), scene_graph
+    )
+    MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
+    meshcat.Delete()
+    meshcat.Set2dRenderMode(
+        X_WC=RigidTransform(RotationMatrix.MakeZRotation(np.pi), [0, 1, 0])
+    )
 
+    # Setup slider input
+    meshcat.AddSlider("u", min=-5, max=5, step=0.1, value=0.0)
+    torque_system = builder.AddSystem(MeshcatSliders(meshcat, ["u"]))
+    builder.Connect(torque_system.get_output_port(), pendulum.get_input_port())
+
+    diagram = builder.Build()
+
+    # Set up a simulator to run this diagram
+    simulator = Simulator(diagram)
+    context = simulator.get_mutable_context()
+
+    meshcat.AddButton("Stop Simulation")
+
+    # Set the initial conditions
+    context.SetContinuousState([0.5, 0])  # theta, thetadot
+
+    simulator.set_target_realtime_rate(1.0)
+
+    print("Use the slider in the MeshCat controls to apply elbow torque.")
+    print("Press 'Stop Simulation' in MeshCat to continue.")
+    while True:
+        simulator.AdvanceTo(simulator.get_context().get_time() + 1.0)
 
 
 if __name__ == "__main__":
