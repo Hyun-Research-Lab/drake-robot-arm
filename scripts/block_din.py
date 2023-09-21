@@ -34,6 +34,11 @@ class BlockDin(LeafSystem):
         self.DeclareVectorInputPort("u_din", 1)
         state_index = self.DeclareContinuousState(1,1,0) # Two state variables, x and xdot
         self.DeclareStateOutputPort("x", state_index)
+        # you must use the DeclareStateOutputPort and not DeclareVectorOutputPort
+        # as otherwise you will cause an algebraic loop. Note that the states need to
+        # be integrated, while a vector output is literally just a vector which has 
+        # nothing to do with integration.... this was a hard bug to track down.
+        # see https://github.com/RussTedrake/underactuated/blob/b0fdc68b862df7bf7ccaec6b4c513762597e0ce7/underactuated/quadrotor2d.py#L23
         
     def DoCalcTimeDerivatives(self, context, derivatives):
 
@@ -79,14 +84,14 @@ builder.Connect(controller.get_output_port(0), plant.get_input_port(0))
 #     X_WC=RigidTransform(RotationMatrix.MakeZRotation(np.pi), [0, 1, 0])
 # )
 
-# create logger to capture the plant output
-logger = LogVectorOutput(plant.get_output_port(0), builder)
+# create logger_plant to capture the plant output
+logger_plant = LogVectorOutput(plant.get_output_port(0), builder)
+logger_controller = LogVectorOutput(controller.get_output_port(0), builder)
 
 diagram = builder.Build()
-diagram_context = diagram.CreateDefaultContext()
 
 # # Set up a simulator to run this diagram
-simulator = Simulator(diagram, diagram_context)
+simulator = Simulator(diagram)
 context = simulator.get_mutable_context()
 # simulator.set_target_realtime_rate(1.0)
 
@@ -98,14 +103,17 @@ simulator.Initialize()
 simulator.AdvanceTo(10.0)
 
 # print sample times and data
-log = logger.FindLog(context)
-print(log.sample_times())
-print(log.data())
+log1 = logger_plant.FindLog(context)
+log2 = logger_controller.FindLog(context)
+
+print(log1.sample_times())
+print(log1.data())
 
 # plot the data with matplotlib
 plt.figure()
-plt.plot(log.sample_times(), log.data().transpose())
-plt.legend(["x", "x_dot"])
+plt.plot(log1.sample_times(), log1.data().transpose())
+plt.plot(log2.sample_times(), log2.data().transpose())
+plt.legend(["x", "x_dot","u"])
 plt.xlabel("time (s)")
 plt.grid()
 plt.show()
