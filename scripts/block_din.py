@@ -43,7 +43,7 @@ class BlockDin(LeafSystem):
         # get input port from context
         u = self.u_port.Eval(context)[0]
 
-        # state space model
+        # state space model (double integrator)
         xdot = x[1]
         xddot = u
 
@@ -61,6 +61,9 @@ class BoxVisualizer(LeafSystem):
         # see https://github.com/RussTedrake/drake/blob/c185d5dd5321ce59fb6c298e1f5e412f55750d6b/examples/acrobot/acrobot_geometry.cc#L55
         # see https://github.com/RussTedrake/drake/blob/c185d5dd5321ce59fb6c298e1f5e412f55750d6b/bindings/pydrake/systems/jupyter_widgets_examples.ipynb#L53
 
+    # a FramePoseVector needs a frame_id and a RigidTransform
+    # The RigidTransform needs a rotation matrix and a position vector, just as we learned in ECE 569
+    # Here, we set the "x" position to be the position of the block, and the "y" and "z" positions to be 0
     def CalcFramePoseOutput(self, context, output):
         position = self.x_port.Eval(context)[0]
         output.get_mutable_value().set_value(self.frame_id, RigidTransform(
@@ -73,6 +76,9 @@ class StupidController(LeafSystem):
         LeafSystem.__init__(self)
         self.DeclareVectorOutputPort("y_control", 1, calc=self.CalcOutput)
         self.u_port = self.DeclareVectorInputPort("u_control", 2)
+        # our vector input port is a 2x1 vector, with the first element being the position
+        # and the second being velocity. We are not actually using the velocity of the box
+        # in order to do our control, but we could if we wanted to.
 
     def CalcOutput(self, context, output):
         # u is the position of the block
@@ -134,7 +140,13 @@ def main_meshcat(render_mode_2D=False):
     scene_graph = builder.AddSystem(SceneGraph())
     meshcat = StartMeshcat()
 
-    # create a frame
+    # Register the geometry with the scene graph.
+    # This is a non-trivial process. See https://drake.mit.edu/doxygen_cxx/classdrake_1_1geometry_1_1_scene_graph.html
+    # in particular, the section Working with SceneGraph > Producer > Registering Geometry
+    # 1. Acquire a source ID for the new geometry
+    # 2. Register a frame. We used the world frame (0).
+    # 3. Register non-deformable geometry (i.e. a box) with the frame.
+    # 4. Assign the geometry a role (illustration)
     source_id = scene_graph.RegisterSource("my_block_source")
     frame_id = scene_graph.RegisterFrame(source_id, GeometryFrame("my_frame", 0))
     geometry_id = scene_graph.RegisterGeometry(source_id, frame_id, 
@@ -142,12 +154,16 @@ def main_meshcat(render_mode_2D=False):
 
     # must assign an illustration role to see the geometry
     scene_graph.AssignRole(source_id, geometry_id, IllustrationProperties())
-
+    
+    # must add the scene graph to the visualizer to see anything
     MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
     
     if render_mode_2D:
         meshcat.Set2dRenderMode(X_WC=RigidTransform(RotationMatrix.MakeZRotation(np.pi), [0, 0, 0]))
 
+    # In order for the frame "my_frame" to move, we must create a leaf system
+    # which tells the scene_graph what pose to assign to the frame for each point in time.
+    # See the BoxVisualizer class above.
     box_viz = builder.AddSystem(BoxVisualizer(frame_id))
 
     # wire it all up
@@ -181,6 +197,6 @@ def main_meshcat(render_mode_2D=False):
 
 
 if __name__ == "__main__":
+    print('NOTE: Meshcat sometimes takes a long time to start up. Please be patient.')
     #main()
     main_meshcat(render_mode_2D=False)
-    
