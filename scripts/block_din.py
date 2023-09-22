@@ -138,7 +138,6 @@ def main_meshcat(render_mode_2D=False):
 
     # Setup visualization
     scene_graph = builder.AddSystem(SceneGraph())
-    meshcat = StartMeshcat()
 
     # Register the geometry with the scene graph.
     # This is a non-trivial process. See https://drake.mit.edu/doxygen_cxx/classdrake_1_1geometry_1_1_scene_graph.html
@@ -156,6 +155,7 @@ def main_meshcat(render_mode_2D=False):
     scene_graph.AssignRole(source_id, geometry_id, IllustrationProperties())
     
     # must add the scene graph to the visualizer to see anything
+    meshcat = StartMeshcat()
     MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
     
     if render_mode_2D:
