@@ -33,6 +33,11 @@ class BlockDin(LeafSystem):
         LeafSystem.__init__(self)
         self.DeclareVectorInputPort("u_din", 1)
         state_index = self.DeclareContinuousState(1,1,0) # Two state variables, x and xdot
+        # you must use DeclareContinuousState(1,1,0)
+        # AND NOT DeclareContinuousState(2) because this function requires 3 inputs:
+        # num q, num v, num z. If you only have q terms (position) there will be not integration
+        # and this will lead directly to algebraic loops (which suck really bad)
+
         self.DeclareStateOutputPort("x", state_index)
         # you must use the DeclareStateOutputPort and not DeclareVectorOutputPort
         # as otherwise you will cause an algebraic loop. Note that the states need to
@@ -61,59 +66,102 @@ class StupidController(LeafSystem):
         self.DeclareVectorInputPort("u_control", 2)
 
     def CalcOutput(self, context, output):
-        # get the current value of the vector input port
+        # u is the position of the block
         u = self.EvalVectorInput(context, 0).CopyToVector()[0]
         y = -1 if u > 0 else 1
         output.SetAtIndex(0, y)
 
-# create the diagram
-builder = DiagramBuilder()
+def main():
+    # create the diagram
+    builder = DiagramBuilder()
+    plant = builder.AddSystem(BlockDin())
+    controller = builder.AddSystem(StupidController())
 
-plant = builder.AddSystem(BlockDin())
-controller = builder.AddSystem(StupidController())
+    # wire it all up
+    builder.Connect(plant.get_output_port(0), controller.get_input_port(0))
+    builder.Connect(controller.get_output_port(0), plant.get_input_port(0))
 
-# wire it all up
-builder.Connect(plant.get_output_port(0), controller.get_input_port(0))
-builder.Connect(controller.get_output_port(0), plant.get_input_port(0))
+    # create logger_plant to capture the plant output
+    logger_plant = LogVectorOutput(plant.get_output_port(0), builder)
+    logger_controller = LogVectorOutput(controller.get_output_port(0), builder)
 
-# Setup visualization
-# scene_graph = builder.AddSystem(SceneGraph())
-# meshcat = StartMeshcat()
-# MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
-# meshcat.Set2dRenderMode(
-#     X_WC=RigidTransform(RotationMatrix.MakeZRotation(np.pi), [0, 1, 0])
-# )
+    diagram = builder.Build()
 
-# create logger_plant to capture the plant output
-logger_plant = LogVectorOutput(plant.get_output_port(0), builder)
-logger_controller = LogVectorOutput(controller.get_output_port(0), builder)
+    # Set up a simulator to run this diagram
+    simulator = Simulator(diagram)
+    context = simulator.get_mutable_context()
+    # simulator.set_target_realtime_rate(1.0)
 
-diagram = builder.Build()
+    plant_context = diagram.GetMutableSubsystemContext(plant, context)
+    plant_context.get_mutable_continuous_state_vector().SetFromVector([np.pi/2, 0.0])
 
-# # Set up a simulator to run this diagram
-simulator = Simulator(diagram)
-context = simulator.get_mutable_context()
-# simulator.set_target_realtime_rate(1.0)
+    # Run the simulation.
+    simulator.Initialize()
+    simulator.AdvanceTo(10.0)
 
-plant_context = diagram.GetMutableSubsystemContext(plant, context)
-plant_context.get_mutable_continuous_state_vector().SetFromVector([np.pi/2, 0.0])
+    # print sample times and data
+    log1 = logger_plant.FindLog(context)
+    log2 = logger_controller.FindLog(context)
 
-# Run the simulation.
-simulator.Initialize()
-simulator.AdvanceTo(10.0)
+    print(log1.sample_times())
+    print(log1.data())
 
-# print sample times and data
-log1 = logger_plant.FindLog(context)
-log2 = logger_controller.FindLog(context)
+    # plot the data with matplotlib
+    plt.figure()
+    plt.plot(log1.sample_times(), log1.data().transpose())
+    plt.plot(log2.sample_times(), log2.data().transpose())
+    plt.legend(["x", "x_dot","u"])
+    plt.xlabel("time (s)")
+    plt.grid()
+    plt.show()
 
-print(log1.sample_times())
-print(log1.data())
+def main_meshcat():
+    # create the diagram
+    builder = DiagramBuilder()
+    plant = builder.AddSystem(BlockDin())
+    controller = builder.AddSystem(StupidController())
 
-# plot the data with matplotlib
-plt.figure()
-plt.plot(log1.sample_times(), log1.data().transpose())
-plt.plot(log2.sample_times(), log2.data().transpose())
-plt.legend(["x", "x_dot","u"])
-plt.xlabel("time (s)")
-plt.grid()
-plt.show()
+    # Setup visualization
+    scene_graph = builder.AddSystem(SceneGraph())
+    meshcat = StartMeshcat()
+    MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
+    meshcat.Set2dRenderMode(
+        X_WC=RigidTransform(RotationMatrix.MakeZRotation(np.pi), [0, 1, 0])
+    )
+
+    # wire it all up
+    builder.Connect(plant.get_output_port(0), controller.get_input_port(0))
+    builder.Connect(controller.get_output_port(0), plant.get_input_port(0))
+
+    # create logger_plant to capture the plant output
+    logger_plant = LogVectorOutput(plant.get_output_port(0), builder)
+    logger_controller = LogVectorOutput(controller.get_output_port(0), builder)
+
+    diagram = builder.Build()
+
+    # Set up a simulator to run this diagram
+    simulator = Simulator(diagram)
+    context = simulator.get_mutable_context()
+
+    plant_context = diagram.GetMutableSubsystemContext(plant, context)
+    plant_context.get_mutable_continuous_state_vector().SetFromVector([np.pi/2, 0.0])
+
+    # Run the simulation.
+    simulator.set_target_realtime_rate(1.0)
+    simulator.set_publish_every_time_step(False)
+
+    meshcat.StartRecording()
+    simulator.Initialize()
+    simulator.AdvanceTo(10.0)
+    meshcat.PublishRecording()
+
+
+if __name__ == "__main__":
+    main()
+    #main_meshcat()
+
+
+
+
+
+
