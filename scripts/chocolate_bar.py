@@ -1,11 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from pydrake.math import RigidTransform, RotationMatrix
+from pydrake.math import RigidTransform, RotationMatrix, ClosestQuaternion
 from pydrake.systems.analysis import Simulator
 from pydrake.systems.framework import BasicVector, Context, LeafSystem, SystemOutput
 from pydrake.geometry import Box, GeometryFrame, FramePoseVector, GeometryInstance, IllustrationProperties
 from pydrake.common.value import AbstractValue
+from pydrake.common.eigen_geometry import Quaternion
 
 from pydrake.all import (
     DiagramBuilder,
@@ -18,14 +19,32 @@ from pydrake.all import (
     StartMeshcat,
 )
 
-class BlockDin(LeafSystem):
+WIDTH = 5.75 # x0
+DEPTH = 2.75 # y0
+HEIGHT = 0.25 # z0
+MASS = 1.0
+
+class ChocolateBar(LeafSystem):
     def __init__(self):
         LeafSystem.__init__(self)
-        self.u_port = self.DeclareVectorInputPort("u_din", 1)
-        position_state_index = self.DeclareContinuousState(3,3,0) # Position and velocity, x,y,z in world frame
-        # see https://github.com/RussTedrake/underactuated/blob/b0fdc68b862df7bf7ccaec6b4c513762597e0ce7/underactuated/quadrotor2d.py#L23
         
-        # TODO: add rotation
+        # input provides acceleration on body z axis
+        self.u_port = self.DeclareVectorInputPort("u_din", 1)
+
+        # see An Introduction to Physically Based Modeling
+        # David Baraff (Carnegie Mellon University)
+        # Chapter 2-4
+
+        # state variables are as follows:
+        # 0:2 - x,y,z (position)
+        # 3:6 - unit quaternion representing rotation
+        # 7:9 - x_dot, y_dot, z_dot (linear velocity)
+        # 10:13 - q_dot
+        position_state_index = self.DeclareContinuousState(7,7,0)
+
+        # inertia tensor in body frame (3x3 matrix)
+        self.I_body = MASS/12 * np.diag([DEPTH**2 + HEIGHT**2, WIDTH**2 + HEIGHT**2, WIDTH**2 + DEPTH**2])
+        self.I_body_inv = np.linalg.inv(self.I_body)
 
         self.DeclareStateOutputPort("x", position_state_index)
         
@@ -33,56 +52,95 @@ class BlockDin(LeafSystem):
     def DoCalcTimeDerivatives(self, context, derivatives):
 
         # get state from context
-        x = context.get_continuous_state_vector().CopyToVector()
-        u = self.EvalVectorInput(context, 0).CopyToVector()
+        state = context.get_continuous_state_vector().CopyToVector()
+        u = self.EvalVectorInput(context, 0).CopyToVector()[0]
+        
+        # unpack state variables
+        x = state[:3]   # positions
+        q = state[3:7]  # quaternion (rotation)
+        x_dot = state[7:10] # velocity
+        q_dot = state[10:]  # d/dt quaternion
 
-        # dynamics
-        q = x[:3] # position: x,y,z
-        qdot = x[3:] # velocity, xdot, ydot, zdot
-        qddot = np.array(
-            [
-                0,
-                0,
-                -9.81
-            ]
-        )
+        # normalize quaternion if necessary
+        try:
+            R = RotationMatrix(Quaternion(q))
+        except:
+            q = q / np.linalg.norm(q)
+            R = RotationMatrix(Quaternion(q))
+
+        # body acceleration (in spatial frame)
+        u = 1 # overwrite the controller
+        x_ddot = R @ np.array([0,0,u]) # + np.array([0,0,-9.81])
+
+        # see table 5.18 in Quaternion.pdf
+        q0,q1,q2,q3 = q
+        G = np.array([
+            [-q1, q0, q3, -q2],
+            [-q2, -q3, q0, q1],
+            [-q3, q2, -q1, q0]
+        ])
+
+        q0,q1,q2,q3 = q_dot
+        G_dot = np.array([
+            [-q1, q0, q3, -q2],
+            [-q2, -q3, q0, q1],
+            [-q3, q2, -q1, q0]
+        ])
+
+        # omega is in body frame
+        omega = 2 * G @ q_dot
+
+        # omega_dot is from the Euler equation in Chapter 4 of MLS
+        # Iw = -w x Iw + tau
+        tau = np.array([0, 0, 1]) # spin about z axis
+        omega_dot = self.I_body_inv @ (np.cross(-omega, self.I_body @ omega) + tau)
+
+        # q_dot = 1/2 G' omega, then take a derivative
+        q_ddot = 0.5 * (G_dot.transpose() @ omega + G.transpose() @ omega_dot)
 
         derivatives.get_mutable_vector().SetFromVector(
-            np.concatenate((qdot, qddot))
+            np.concatenate((x_dot, q_dot, x_ddot, q_ddot))
         )
 
-class ChocolateBarVisualizer(LeafSystem):
+class ChocolateBarPoseGenerator(LeafSystem):
     def __init__(self,frame_id):
         LeafSystem.__init__(self)
         self.frame_id = frame_id
-        self.x_port = self.DeclareVectorInputPort("x", BasicVector(6)) # position and velocity, for x,y,z
+        self.state_port = self.DeclareVectorInputPort("x", BasicVector(14))
         self.DeclareAbstractOutputPort("my_pose", lambda: AbstractValue.Make(FramePoseVector()), self.CalcFramePoseOutput)
         
+    # note that we are actually moving and rotating the FRAME
+    # and because the chocolate bar is attached to the frame,
+    # the chocolate bar will move and rotate with the frame
     def CalcFramePoseOutput(self, context, output):
-        x,y,z = self.x_port.Eval(context)[0:3]
+        state = self.state_port.Eval(context)
+        x = state[:3]
+        q = Quaternion(state[3:7])
+
         output.get_mutable_value().set_value(self.frame_id, RigidTransform(
-            RotationMatrix().Identity(),
-            np.array([x,y,z])
+            RotationMatrix(quaternion=q),
+            x
         ))
 
 class StupidController(LeafSystem):
     def __init__(self):
         LeafSystem.__init__(self)
         self.DeclareVectorOutputPort("y_control", 1, calc=self.CalcOutput)
-        self.u_port = self.DeclareVectorInputPort("u_control", 6)
+        self.u_port = self.DeclareVectorInputPort("u_control", 14)
 
     def CalcOutput(self, context, output):
         # z position of block
         z = self.u_port.Eval(context)[2]
-        if z < 0:
-            output.SetAtIndex(0, 10)
-        else:
-            output.SetAtIndex(0, 0) # no input
+        # if z < 0:
+        #     output.SetAtIndex(0, 3*9.81) # apply force upwards
+        # else:
+        #     output.SetAtIndex(0, 0) # no input (let block fall down)
+        output.SetAtIndex(0, 0)
 
-def main_meshcat(render_mode_2D=False):
+def main_meshcat():
     # create the diagram
     builder = DiagramBuilder()
-    plant = builder.AddSystem(BlockDin())
+    plant = builder.AddSystem(ChocolateBar())
     controller = builder.AddSystem(StupidController())
 
     # Setup visualization
@@ -98,7 +156,7 @@ def main_meshcat(render_mode_2D=False):
     source_id = scene_graph.RegisterSource("my_block_source")
     frame_id = scene_graph.RegisterFrame(source_id, GeometryFrame("my_frame", 0))
     geometry_id = scene_graph.RegisterGeometry(source_id, frame_id, 
-        GeometryInstance(RigidTransform(), Box(5.75, 2.75, 0.25), "my_geometry_instance"))
+        GeometryInstance(RigidTransform(), Box(WIDTH, DEPTH, HEIGHT), "my_geometry_instance"))
 
     # must assign an illustration role to see the geometry
     scene_graph.AssignRole(source_id, geometry_id, IllustrationProperties())
@@ -106,14 +164,11 @@ def main_meshcat(render_mode_2D=False):
     # must add the scene graph to the visualizer to see anything
     meshcat = StartMeshcat()
     MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
-    
-    if render_mode_2D:
-        meshcat.Set2dRenderMode(X_WC=RigidTransform(RotationMatrix.MakeZRotation(np.pi), [0, 0, 0]))
 
     # In order for the frame "my_frame" to move, we must create a leaf system
     # which tells the scene_graph what pose to assign to the frame for each point in time.
-    # See the ChocolateBarVisualizer class above.
-    box_viz = builder.AddSystem(ChocolateBarVisualizer(frame_id))
+    # See the ChocolateBarPoseGenerator class above.
+    box_viz = builder.AddSystem(ChocolateBarPoseGenerator(frame_id))
 
     # wire it all up
     builder.Connect(plant.get_output_port(0), controller.get_input_port(0))
@@ -130,7 +185,16 @@ def main_meshcat(render_mode_2D=False):
 
     # set the block initial conditions
     plant_context = diagram.GetMutableSubsystemContext(plant, context)
-    plant_context.get_mutable_continuous_state_vector().SetFromVector([0,0,0,0,0,10])
+    
+    R = RotationMatrix.MakeXRotation(np.pi/4)
+    q = R.ToQuaternion().wxyz()
+
+    plant_context.get_mutable_continuous_state_vector().SetFromVector(
+        [0,0,1,    # position
+         q[0], q[1], q[2], q[3],  # unit quaternion (rotation)
+         0,0,0,    # velocity
+         0,0,0,0]  # d/dt quaternion
+    )
 
     # Run the simulation.
     simulator.set_target_realtime_rate(1.0)
@@ -147,5 +211,4 @@ def main_meshcat(render_mode_2D=False):
 
 if __name__ == "__main__":
     print('NOTE: Meshcat sometimes takes a long time to start up. Please be patient.')
-    #main()
-    main_meshcat(render_mode_2D=False)
+    main_meshcat()
