@@ -20,6 +20,7 @@ from pydrake.all import (
     StartMeshcat,
     WrapToSystem,
     namedview,
+    ConstantVectorSource,
 )
 from pydrake.examples import (
     AcrobotGeometry,
@@ -33,20 +34,50 @@ from pydrake.examples import (
 
 from pydrake.solvers import MathematicalProgram, Solve
 from libs.scenarios  import AddFloatingRpyJoint
+meshcat = StartMeshcat()
 
 def MakeMultibodyQuadrotor():
     
     builder = DiagramBuilder()
-    # The MultibodyPlant handles f=ma, but doesn't know about propellers.
-    plant = builder.AddSystem(MultibodyPlant(0.0))
-    parser = Parser(plant)
-    (model_instance,) = parser.AddModelsFromUrl(
-        "package://drake/examples/quadrotor/quadrotor.urdf"
-    )
-    # By default the multibody has a quaternion floating base.  To match
-    # QuadrotorPlant, we can manually add a FloatingRollPitchYaw joint. We set
-    # `use_ball_rpy` to false because the BallRpyJoint uses angular velocities
-    # instead of ṙ, ṗ, ẏ.
+    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=0.0)
+
+
+    #Parse urdf
+    parser = Parser(plant, scene_graph)
+    parser.AddModelsFromUrl("package://drake/examples/quadrotor/quadrotor.urdf")
+    plant.Finalize()
+
+
+    #visualize  
+    MeshcatVisualizer.AddToBuilder(builder,scene_graph, meshcat)
+    # builder.Connect(scene_graph.get_pose_bundle_output_port(), visualizer.get_input_port(0))
+    diagram = builder.Build()
+    simulator = Simulator(diagram)
+    simulator.set_target_realtime_rate(1.0)
+    simulator.set_publish_every_time_step(False)
+
+    # Start the simulation with visualization
+    meshcat.StartRecording()
+    simulator.Initialize()
+    simulator.AdvanceTo(2)
+    meshcat.PublishRecording()
+
+    # MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
+    print("rdy")
+    while True:
+        pass
+    # return builder.Build(), plant
+
+
+def MakeMultibodyQuadrotorLQR():
+    
+    builder = DiagramBuilder()
+    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=0.0)
+
+
+    #Parse urdf
+    parser = Parser(plant, scene_graph)
+    (model_instance,) = parser.AddModelsFromUrl("package://drake/examples/quadrotor/quadrotor.urdf")
     AddFloatingRpyJoint(
         plant,
         plant.GetFrameByName("base_link"),
@@ -55,9 +86,10 @@ def MakeMultibodyQuadrotor():
     )
     plant.Finalize()
 
-    # Now we can add in propellers as an external force on the MultibodyPlant.
-    body_index = plant.GetBodyByName("base_link").index()
+
+    #adding propeller external output 
     # Default parameters from quadrotor_plant.cc:
+    body_index = plant.GetBodyByName("base_link").index()
     L = 0.15  # Length of the arms (m).
     kF = 1.0  # Force input constant.
     kM = 0.0245  # Moment input constant.
@@ -79,31 +111,130 @@ def MakeMultibodyQuadrotor():
         propellers.get_body_poses_input_port(),
     )
     builder.ExportInput(propellers.get_command_input_port(), "u")
+    builder.ExportOutput(plant.get_state_output_port(), "x")
+    builder.ExportOutput(scene_graph.get_query_output_port(), "query")
 
-    #Setup visualization
-    scene_graph = builder.AddSystem(SceneGraph())
-    QuadrotorGeometry.AddToBuilder(
-        builder, plant.get_output_port(0), scene_graph
-    )       
-    meshcat = StartMeshcat()
-    MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
-    # QuadrotorGeometry.AddToBuilder(
-    #     builder, plant.get_output_port(0), scene_graph
-    # )
     diagram = builder.Build()
-    diagram_context = diagram.CreateDefaultContext()
-    simulator = Simulator(diagram, diagram_context)
-    simulator.set_target_realtime_rate(1.0)
-    simulator.set_publish_every_time_step(False)
+    state_names = plant.GetStateNames(False)
+    print(state_names, len(state_names))
+    StateView = namedview("state", state_names)
+    for i in range(plant.num_input_ports()):
+        print(f"Input Port {i}: {plant.get_input_port(i).get_name()}")
 
+    for i in range(plant.num_output_ports()):
+        print(f"Output Port {i}: {plant.get_output_port(i).get_name()}")
+    
+    world_builder = DiagramBuilder()
+    world_builder.AddSystem(diagram)
+
+    # Create the LQR controller
+    context = diagram.CreateDefaultContext()
+    nominal_state = StateView.Zero()
+    nominal_state.z_x = 1.0  # height is 1.0m
+    # nominal_state. = 1  # no rotation
+    context.SetContinuousState(nominal_state[:])
+    mass = plant.CalcTotalMass(plant.GetMyContextFromRoot(context))
+    gravity = plant.gravity_field().gravity_vector()[2]
+    nominal_input = [-mass * gravity / 4] * 4
+    diagram.get_input_port().FixValue(context, nominal_input)
+    
+    #check states
+    n = plant.num_positions() + plant.num_velocities()
+    print(n)
+    Q = np.diag(np.concatenate(([10] * (n//2), [1] * (n//2 + n %2 ))))
+    print(Q)
+    print(f"Number of actuators: {plant.num_actuators()}")
+    m = plant.num_actuators()
+    R = np.eye(4) #properllers are external, so they are not part of the plant actuators
+
+    controller = world_builder.AddSystem(LinearQuadraticRegulator(diagram, context, Q, R))
+    world_builder.Connect(controller.get_output_port(), diagram.get_input_port())
+    world_builder.Connect(diagram.GetOutputPort("x"),
+                    controller.get_input_port())
+
+    # MeshcatVisualizer.AddToBuilder(world_builder, scene_graph, meshcat)
+    MeshcatVisualizer.AddToBuilder(world_builder, diagram.GetOutputPort("query"), meshcat)
+    # builder.Connect(scene_graph.get_pose_bundle_output_port(), visualizer.get_input_port(0))
+    world_diagram = world_builder.Build()
+    simulator = Simulator(world_diagram)
+    simulator.set_target_realtime_rate(1.0)
+    # simulator.set_publish_every_time_step(False)
+    context = simulator.get_mutable_context()
+
+    # Simulate
+    for i in range(5):
+        context.SetTime(0.0)
+        context.SetContinuousState(
+            0.5
+            * np.random.randn(
+                12,
+            )
+        )
+        simulator.Initialize()
+        simulator.AdvanceTo(0.1)
+
+    # Start the simulation with visualization
     meshcat.StartRecording()
     simulator.Initialize()
     simulator.AdvanceTo(2)
     meshcat.PublishRecording()
-    return
-    # return builder.Build(), plant
 
-MakeMultibodyQuadrotor()
+    print("rdy")
+    while True:
+        pass
+
+
+
+def quadrotor_example():
+    builder = DiagramBuilder()
+
+    # plant = builder.AddSystem(QuadrotorPlant())
+    plant = builder.AddSystem(MultibodyPlant(0.0))
+    parser = Parser(plant)
+    (model_instance,) = parser.AddModelsFromUrl(
+        "package://drake/examples/quadrotor/quadrotor.urdf"
+    )
+    controller = builder.AddSystem(StabilizingLQRController(plant, [0, 0, 1]))
+    builder.Connect(controller.get_output_port(0), plant.get_input_port(0))
+    builder.Connect(plant.get_output_port(0), controller.get_input_port(0))
+
+    # Set up visualization in MeshCat
+    scene_graph = builder.AddSystem(SceneGraph())
+    QuadrotorGeometry.AddToBuilder(
+        builder, plant.get_output_port(0), scene_graph
+    )
+    meshcat.Delete()
+    meshcat.ResetRenderMode()
+    meshcat.SetProperty("/Background", "visible", False)
+    MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
+    # end setup for visualization
+
+    diagram = builder.Build()
+
+    # Set up a simulator to run this diagram
+    simulator = Simulator(diagram)
+    simulator.set_target_realtime_rate(1.0)
+    context = simulator.get_mutable_context()
+
+    # Simulate
+    for i in range(5):
+        context.SetTime(0.0)
+        context.SetContinuousState(
+            0.5
+            * np.random.randn(
+                12,
+            )
+        )
+        simulator.Initialize()
+    # simulator.AdvanceTo(2)
+    # meshcat.PublishRecording()
+    while True:
+        pass
+
+
+# quadrotor_example()
+# MakeMultibodyQuadrotor()
+MakeMultibodyQuadrotorLQR()
 # This test demonstrates that the MultibodyPlant version has identical dynamics
 # to the QuadrotorPlant version (except that the state variables are permuted).
 # TODO(russt): Move this to Drake as a unit test.
