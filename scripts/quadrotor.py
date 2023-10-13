@@ -76,9 +76,9 @@ def MakeMultibodyQuadrotorLQR():
 
 
     #Parse urdf
-    parser = Parser(plant, scene_graph)
+    parser = Parser(plant, scene_graph) #also adds geometry to scene_graph
     (model_instance,) = parser.AddModelsFromUrl("package://drake/examples/quadrotor/quadrotor.urdf")
-    AddFloatingRpyJoint(
+    AddFloatingRpyJoint( #this is just to change the states from quaternion naming scheme (13 states) to rpy naming scheme (12 states)
         plant,
         plant.GetFrameByName("base_link"),
         model_instance,
@@ -87,7 +87,7 @@ def MakeMultibodyQuadrotorLQR():
     plant.Finalize()
 
 
-    #adding propeller external output 
+    #adding propeller external output, so 0 internal actuators, 4 external
     # Default parameters from quadrotor_plant.cc:
     body_index = plant.GetBodyByName("base_link").index()
     L = 0.15  # Length of the arms (m).
@@ -110,10 +110,16 @@ def MakeMultibodyQuadrotorLQR():
         plant.get_body_poses_output_port(),
         propellers.get_body_poses_input_port(),
     )
+
+    #Exporting output, so u would be to propellers, x would be to plant for LQR feedback, 
+    #Query output port is for visualization, must be exported, cant just directly get query and connect
     builder.ExportInput(propellers.get_command_input_port(), "u")
     builder.ExportOutput(plant.get_state_output_port(), "x")
     builder.ExportOutput(scene_graph.get_query_output_port(), "query")
 
+    #We have to build now to grab the context from the diagram and set nominal states 
+    #We use another builder (world_builder) as a wrapper, add the prev builder in and then 
+    #add the LQR controller to the wrapper along with visualization
     diagram = builder.Build()
     state_names = plant.GetStateNames(False)
     print(state_names, len(state_names))
@@ -123,14 +129,16 @@ def MakeMultibodyQuadrotorLQR():
 
     for i in range(plant.num_output_ports()):
         print(f"Output Port {i}: {plant.get_output_port(i).get_name()}")
-    
+
+    for i in range(diagram.num_input_ports()):
+        print(f"in Port {i}: {diagram.get_input_port(i).get_name()}")
     world_builder = DiagramBuilder()
     world_builder.AddSystem(diagram)
 
     # Create the LQR controller
     context = diagram.CreateDefaultContext()
     nominal_state = StateView.Zero()
-    nominal_state.z_x = 1.0  # height is 1.0m
+    nominal_state.z_x = 3.0  # height is 1.0m
     # nominal_state. = 1  # no rotation
     context.SetContinuousState(nominal_state[:])
     mass = plant.CalcTotalMass(plant.GetMyContextFromRoot(context))
@@ -142,6 +150,7 @@ def MakeMultibodyQuadrotorLQR():
     n = plant.num_positions() + plant.num_velocities()
     print(n)
     Q = np.diag(np.concatenate(([10] * (n//2), [1] * (n//2 + n %2 ))))
+    # Q = np.diag(np.concatenate(([1] * (3), [10] * (9))))
     print(Q)
     print(f"Number of actuators: {plant.num_actuators()}")
     m = plant.num_actuators()
@@ -176,7 +185,7 @@ def MakeMultibodyQuadrotorLQR():
     # Start the simulation with visualization
     meshcat.StartRecording()
     simulator.Initialize()
-    simulator.AdvanceTo(2)
+    simulator.AdvanceTo(5)
     meshcat.PublishRecording()
 
     print("rdy")
