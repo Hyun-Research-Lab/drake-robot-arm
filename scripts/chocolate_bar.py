@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from pydrake.math import RigidTransform, RotationMatrix, ClosestQuaternion
 from pydrake.systems.analysis import Simulator
 from pydrake.systems.framework import BasicVector, Context, LeafSystem, SystemOutput
-from pydrake.geometry import Box, GeometryFrame, FramePoseVector, GeometryInstance, IllustrationProperties
+from pydrake.geometry import Box, GeometryFrame, FramePoseVector, GeometryInstance, IllustrationProperties, Mesh
 from pydrake.common.value import AbstractValue
 from pydrake.common.eigen_geometry import Quaternion
 
@@ -69,7 +69,7 @@ class ChocolateBar(LeafSystem):
             R = RotationMatrix(Quaternion(q))
 
         # body acceleration (in spatial frame)
-        u = 1 # overwrite the controller
+        u = 0 # overwrite the controller
         x_ddot = R @ np.array([0,0,u]) # + np.array([0,0,-9.81])
 
         # see table 5.18 in Quaternion.pdf
@@ -155,8 +155,10 @@ def main_meshcat():
     # 4. Assign the geometry a role (illustration)
     source_id = scene_graph.RegisterSource("my_block_source")
     frame_id = scene_graph.RegisterFrame(source_id, GeometryFrame("my_frame", 0))
+    # geometry_id = scene_graph.RegisterGeometry(source_id, frame_id, 
+    #     GeometryInstance(RigidTransform(), Box(WIDTH, DEPTH, HEIGHT), "my_geometry_instance"))
     geometry_id = scene_graph.RegisterGeometry(source_id, frame_id, 
-        GeometryInstance(RigidTransform(), Box(WIDTH, DEPTH, HEIGHT), "my_geometry_instance"))
+        GeometryInstance(RigidTransform(), Mesh('meshes/chocolate_bar/Chocolate_Bar.obj', scale=0.01), "my_geometry_instance"))
 
     # must assign an illustration role to see the geometry
     scene_graph.AssignRole(source_id, geometry_id, IllustrationProperties())
@@ -190,7 +192,7 @@ def main_meshcat():
     q = R.ToQuaternion().wxyz()
 
     plant_context.get_mutable_continuous_state_vector().SetFromVector(
-        [0,0,1,    # position
+        [0,0,0,    # position
          q[0], q[1], q[2], q[3],  # unit quaternion (rotation)
          0,0,0,    # velocity
          0,0,0,0]  # d/dt quaternion
@@ -202,7 +204,7 @@ def main_meshcat():
 
     meshcat.StartRecording()
     simulator.Initialize()
-    simulator.AdvanceTo(3.0)
+    simulator.AdvanceTo(30.0)
     meshcat.PublishRecording()
 
     while True:
