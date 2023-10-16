@@ -276,4 +276,9 @@
       effort="0"
       velocity="0" />
   </joint>
+  <transmission type="SimpleTransmission" name="my_transmission">
+    <actuator name="LW_J_Pitch_Actuator"/>
+    <joint name="LW_J_Pitch"/>
+    <mechanicalReduction>1</mechanicalReduction>
+  </transmission>
 </robot>

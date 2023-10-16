@@ -17,6 +17,7 @@ from pydrake.all import (
     PlanarSceneGraphVisualizer,
     SceneGraph,
     Simulator,
+    Sine,
     SnoptSolver,
     Solve,
     TrajectorySource,
@@ -42,6 +43,7 @@ from pydrake.all import (
     WrapToSystem,
     namedview,
     ConstantVectorSource,
+    Multiplexer,
 )
 from pydrake.examples import (
     AcrobotGeometry,
@@ -57,7 +59,9 @@ from pydrake.examples import (
 from pydrake.solvers import MathematicalProgram, Solve
 from libs.scenarios  import AddFloatingRpyJoint
 import os
-from pydrake.multibody.tree import JointIndex, JointActuatorIndex
+from pydrake.systems.framework import BasicVector
+
+from pydrake.multibody.tree import JointIndex, JointActuatorIndex, JointActuator
 
 meshcat = StartMeshcat()
 
@@ -76,6 +80,7 @@ def MultiBodyParser(): #change proj dir and model from path/name
     #     model_instance,
     #     use_ball_rpy=False,
     # )
+    plant.mutable_gravity_field().set_gravity_vector([0, 0, 0])
     plant.Finalize()
 
     #Info check
@@ -101,6 +106,7 @@ def MultiBodyParser(): #change proj dir and model from path/name
         #         print(f"Joint: {joint.name()}, Actuator: {actuator.name()}")
         print(f"Joint: {joint.name()}, Model Instance: {joint.model_instance()}")
 
+    print("Actuator names: ", plant.GetActuatorNames(add_model_instance_prefix=False))
     print("Actuators: " + str(plant.num_actuators()))
     #broken
     # actuation_model = plant.get_actuation_input_port()
@@ -124,5 +130,79 @@ def MultiBodyParser(): #change proj dir and model from path/name
     #     print(f"Output Port {i}: {output_port.get_name()}")
 
     return plant, scene_graph, builder
-MultiBodyParser()
+
+def Flap():
+    plant, scene_graph, builder = MultiBodyParser()
+    # builder.ExportInput(plant.get_input_port(4), "actuation")
+    MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
+    #sine(amp, freq, phase, vector size)
+    sine_wave = Sine(8.0, 7.0, 1.0, 1)
+    sine_wave2 = Sine(-8.0, 7.0, 1.0, 1)
+    sin = builder.AddSystem(sine_wave)
+    sin2 = builder.AddSystem(sine_wave2)
+    # builder.Connect(sine_wave.get_output_port(0), plant.get_actuation_input_port())
+    sinmux = builder.AddSystem(Multiplexer([1, 1]))
+    builder.Connect(sin.get_output_port(0), sinmux.get_input_port(1))
+    builder.Connect(sin2.get_output_port(0), sinmux.get_input_port(0))
+
+    mux = builder.AddSystem(Multiplexer([2, 2]))
+    builder.Connect(sinmux.get_output_port(0), mux.get_input_port(1))
+    passive_in = builder.AddSystem(ConstantVectorSource([0.0, 0.0]))
+    builder.Connect(passive_in.get_output_port(0), mux.get_input_port(0))
+    builder.Connect(mux.get_output_port(0), plant.get_actuation_input_port())
+    diagram = builder.Build()
+
+    state_names = plant.GetStateNames(False)
+    print("states:", state_names, len(state_names))
+    StateView = namedview("state", state_names)
+    for i in range(plant.num_input_ports()):
+        print(f"Input Port {i}: {plant.get_input_port(i).get_name()}")
+
+    for i in range(plant.num_output_ports()):
+        print(f"Output Port {i}: {plant.get_output_port(i).get_name()}")
+    
+    for i in range(diagram.num_input_ports()):
+        print(f"in Port {i}: {diagram.get_input_port(i).get_name()}")
+
+    context = diagram.CreateDefaultContext()
+    plant_context = diagram.GetMutableSubsystemContext(plant, context)
+    actuation_input_port = plant.get_actuation_input_port()
+    print(actuation_input_port.get_name())
+    
+    #can also use GetJointActuatorByName()
+    # rw_passive = plant.GetJointActuatorByName("joint_RW_J_Pitch")
+    # lw_passive = plant.GetJointActuatorByName("joint_LW_J_Pitch")
+    # assert isinstance(rw_passive, JointActuator)
+    # assert rw_passive.joint().num_velocities() == 1
+    # print(lw_passive.joint().num_velocities())
+    # print(rw_passive.num_inputs())
+    # agh =[[]]
+    # u_inst = np.array([[0.0]],)
+    # print(u_inst.shape)
+    # #print u_inst type
+    # print(u_inst.dtype)
+    # print(type(u_inst))
+    # rw_passive.set_actuation_vector(u_inst)
+    
+    #set actuations
+    
+    # plant.get_actuation_input_port().FixValue(plant_context, np.array([[0.0,0.0,1,1]]))
+    # plant.get_actuation_input_port().FixValue(plant_context, np.array([[0.0,0.0,1,1]]))
+    #print diagram input ports
+    print("dia ports", diagram.num_input_ports())
+    
+    # vector = BasicVector([0.0, 0.0, 1, 1])
+    # diagram.get_input_port().FixValue(context, vector)
+    #visualize
+    simulator = Simulator(diagram, context)
+    simulator.set_target_realtime_rate(1.0)
+    context = simulator.get_mutable_context()
+    meshcat.StartRecording()
+    simulator.Initialize()
+    simulator.AdvanceTo(5)
+    meshcat.PublishRecording()
+    print("Done")
+    while True:
+        pass
+Flap()
 

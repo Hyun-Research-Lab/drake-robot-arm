@@ -51,7 +51,7 @@
          </link>
       </model> -->
       <model name="URDF_LargeWings"> <!-- flies in -y dir-->
-         <pose relative_to="world">0 0 7 1.5708 0 0</pose>
+         <pose relative_to="world">0 0 .5 1.5708 0 0</pose>
          <!-- <pose relative_to="world">0 0 1 .5708 0 0</pose> -->
          <link name="base_link">
             <pose>0 0 0 0 0 0</pose>
@@ -317,7 +317,8 @@
             </axis>
          </joint>
 
-         <joint name="pole" type="prismatic">
+         
+         <!-- <joint name="pole" type="prismatic">
             <pose relative_to="base_link">0 0 0 0 0 0</pose>
             <parent>world</parent>
             <child>base_link</child>
@@ -328,7 +329,7 @@
                   <upper>1.79769e+308</upper>
                </limit>
             </axis>
-         </joint>
+         </joint> -->
 
          <!-- <joint name="anchor" type="revolute"> 
             <pose relative_to="base_link">0 0 0 0 0 0</pose>
@@ -342,7 +343,11 @@
                </limit>        
             </axis>
          </joint> -->
-
+      </model>
+      <gravity> 0 0 0 </gravity>
+   </world>
+</sdf>
+<!--
          <plugin filename="aero_state_plugins" name="aerodynamics">
             <data_file_path>/home/darin/Github/ros2-gazebo-drake-sims/flapping_proj/data/aero.csv</data_file_path>
             <only_data>false</only_data>
