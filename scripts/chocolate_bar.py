@@ -19,21 +19,18 @@ from pydrake.all import (
     StartMeshcat,
 )
 
-WIDTH = 5.75 # x0
-DEPTH = 2.75 # y0
-HEIGHT = 0.25 # z0
-MASS = 1.0
+# SI units
+WIDTH = 0.129  # m
+DEPTH = 0.071  # m
+HEIGHT = 0.005 # m
+MASS = 0.043   # kg
 
 class ChocolateBar(LeafSystem):
     def __init__(self):
         LeafSystem.__init__(self)
         
-        # input provides acceleration on body z axis
-        self.u_port = self.DeclareVectorInputPort("u_din", 1)
-
-        # see An Introduction to Physically Based Modeling
-        # David Baraff (Carnegie Mellon University)
-        # Chapter 2-4
+        # input provides force and torque
+        self.u_port = self.DeclareVectorInputPort("u_din", 6)
 
         # state variables are as follows:
         # 0:2 - x,y,z (position)
@@ -53,7 +50,8 @@ class ChocolateBar(LeafSystem):
 
         # get state from context
         state = context.get_continuous_state_vector().CopyToVector()
-        u = self.EvalVectorInput(context, 0).CopyToVector()[0]
+        u = self.EvalVectorInput(context, 0).CopyToVector()[0:3]
+        tau = self.EvalVectorInput(context, 0).CopyToVector()[3:]
         
         # unpack state variables
         x = state[:3]   # positions
@@ -69,8 +67,7 @@ class ChocolateBar(LeafSystem):
             R = RotationMatrix(Quaternion(q))
 
         # body acceleration (in spatial frame)
-        u = 0 # overwrite the controller
-        x_ddot = R @ np.array([0,0,u]) # + np.array([0,0,-9.81])
+        x_ddot = R @ u # + np.array([0,0,-9.81])
 
         # see table 5.18 in Quaternion.pdf
         q0,q1,q2,q3 = q
@@ -92,7 +89,6 @@ class ChocolateBar(LeafSystem):
 
         # omega_dot is from the Euler equation in Chapter 4 of MLS
         # Iw = -w x Iw + tau
-        tau = np.array([0, 0, 1]) # spin about z axis
         omega_dot = self.I_body_inv @ (np.cross(-omega, self.I_body @ omega) + tau)
 
         # q_dot = 1/2 G' omega, then take a derivative
@@ -125,17 +121,15 @@ class ChocolateBarPoseGenerator(LeafSystem):
 class StupidController(LeafSystem):
     def __init__(self):
         LeafSystem.__init__(self)
-        self.DeclareVectorOutputPort("y_control", 1, calc=self.CalcOutput)
+        self.DeclareVectorOutputPort("y_control", 6, calc=self.CalcOutput)
         self.u_port = self.DeclareVectorInputPort("u_control", 14)
 
     def CalcOutput(self, context, output):
-        # z position of block
-        z = self.u_port.Eval(context)[2]
-        # if z < 0:
-        #     output.SetAtIndex(0, 3*9.81) # apply force upwards
-        # else:
-        #     output.SetAtIndex(0, 0) # no input (let block fall down)
-        output.SetAtIndex(0, 0)
+        # get position of block
+        # x,y,z = self.u_port.Eval(context)[0:3]
+        u = np.array([0,0,10]) * 1e-3   # 10 mN
+        tau = np.array([0,0,10]) * 1e-6 # 10 mN*mm
+        output.SetFromVector(np.concatenate((u,tau)))
 
 def main_meshcat():
     # create the diagram
@@ -188,7 +182,7 @@ def main_meshcat():
     # set the block initial conditions
     plant_context = diagram.GetMutableSubsystemContext(plant, context)
     
-    R = RotationMatrix.MakeXRotation(np.pi/4)
+    R = RotationMatrix.MakeXRotation(np.pi/8)
     q = R.ToQuaternion().wxyz()
 
     plant_context.get_mutable_continuous_state_vector().SetFromVector(
@@ -204,7 +198,7 @@ def main_meshcat():
 
     meshcat.StartRecording()
     simulator.Initialize()
-    simulator.AdvanceTo(30.0)
+    simulator.AdvanceTo(10.0)
     meshcat.PublishRecording()
 
     while True:
