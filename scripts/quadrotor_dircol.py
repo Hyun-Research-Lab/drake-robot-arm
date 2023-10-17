@@ -114,12 +114,9 @@ def traj_opt(plant, init_state, final_state, num_time_samples=21, minimum_time=0
     dir_prog = dircol.prog() #math prog
     print(dircol.initial_state())
     dir_prog.AddBoundingBoxConstraint(init_state, init_state,  dircol.initial_state())
-    # More elegant version is blocked on drake #8315:
-    # dircol.AddLinearConstraint(dircol.initial_state() == initial_state)
     dir_prog.AddBoundingBoxConstraint(final_state, final_state, dircol.final_state())
-    #dircol.AddLinearConstraint(dircol.final_state() == final_state)
+
     #cost function
-    # R = 10 * np.eye(4)  # Cost on input "effort". (4 propellers)
     R = 10 
     dircol.AddRunningCost(R * u[0]**2)
     # Add a final cost equal to the total duration.
