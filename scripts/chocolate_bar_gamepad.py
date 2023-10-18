@@ -67,7 +67,7 @@ class ChocolateBar(LeafSystem):
             R = RotationMatrix(Quaternion(q))
 
         # body acceleration (in spatial frame)
-        x_ddot = R @ u + np.array([0,0,-9.81])
+        x_ddot = 1/MASS * (R @ u + np.array([0,0,-9.81*MASS]))
 
         # see table 5.18 in Quaternion.pdf
         q0,q1,q2,q3 = q
@@ -259,7 +259,7 @@ def main():
             [
                 0,
                 0,
-                9.81*(axes[2]+axes[5]+2),
+                MASS*9.81*(axes[2]+axes[5]+2),
                 axes[1] * 1e-4*1.5, # left stick vertical controls Tx
                 0,
                 axes[3] * 1e-4, # right stick horizontal controls Tz
