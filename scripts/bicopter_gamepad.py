@@ -22,8 +22,8 @@ from pydrake.all import (
 # SI units
 WIDTH = 180 * 1e-3
 DEPTH = 30 * 1e-3
-HEIGHT = 30 * 1e-3
-MASS = 1  # kg
+HEIGHT = 60 * 1e-3
+MASS = 0.350  # kg
 
 class Bicopter(LeafSystem):
     def __init__(self):
@@ -63,7 +63,8 @@ class Bicopter(LeafSystem):
         # h = distance from Bicopter CoM to pivot point in (z) direction
         # d = distance from pivot point to thrust vector location
         L = 90 * 1e-3
-        h = 20 * 1e-3
+        #h = 20 * 1e-3
+        h = 0
         d = 38 * 1e-3
 
         fz = u[0]
@@ -108,7 +109,7 @@ class Bicopter(LeafSystem):
             R = RotationMatrix(Quaternion(q))
 
         # body acceleration (in spatial frame)
-        x_ddot = R @ Fb[3:] + np.array([0,0,-9.81])
+        x_ddot = 1/MASS*(R @ Fb[3:] + np.array([0,0,-9.81*MASS]))
 
         # see table 5.18 in Quaternion.pdf
         q0,q1,q2,q3 = q
@@ -298,13 +299,13 @@ def main():
         # u[2] = left servo motor angle (radians)
         # u[3] = right servo motor angle (radians)
 
-        FL = 9.81*(1+axes[2])/2
-        FR = 9.81*(1+axes[5])/2
+        FL = MASS*9.81*(1+axes[2])/2
+        FR = MASS*9.81*(1+axes[5])/2
         F = 0.5*(FL + FR)
         diagram.get_input_port(0).FixValue(context,
             [
-                F + FL*0.05, # get left trigger value
-                F + FR*0.05, # get right trigger value
+                F + FL*0.02, # get left trigger value
+                F + FR*0.02, # get right trigger value
                 axes[1] * np.pi/8, # get left stick vertical
                 axes[1] * np.pi/8, # right stick vertical
             ]
