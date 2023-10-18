@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from pydrake.math import RigidTransform, RotationMatrix, ClosestQuaternion
 from pydrake.systems.analysis import Simulator
 from pydrake.systems.framework import BasicVector, Context, LeafSystem, SystemOutput
-from pydrake.geometry import Box, GeometryFrame, FramePoseVector, GeometryInstance, IllustrationProperties, Mesh
+from pydrake.geometry import Box, GeometryFrame, Meshcat, FramePoseVector, GeometryInstance, IllustrationProperties, Mesh, Cylinder, MakePhongIllustrationProperties
 from pydrake.common.value import AbstractValue
 from pydrake.common.eigen_geometry import Quaternion
 
@@ -18,6 +18,40 @@ from pydrake.all import (
     Simulator,
     StartMeshcat,
 )
+
+# https://github.com/kwesiRutledge/OzayGroupExploration/blob/main/drake/manip_tests/config_demo.py
+def AddTriad(source_id, frame_id, scene_graph, length=.25, radius=0.01, opacity=1., X_FT=RigidTransform(), name="frame"):
+    """
+    Adds illustration geometry representing the coordinate frame, with the
+    x-axis drawn in red, the y-axis in green and the z-axis in blue. The axes
+    point in +x, +y and +z directions, respectively.
+    Args:
+      source_id: The source registered with SceneGraph.
+      frame_id: A geometry::frame_id registered with scene_graph.
+      scene_graph: The SceneGraph with which we will register the geometry.
+      length: the length of each axis in meters.
+      radius: the radius of each axis in meters.
+      opacity: the opacity of the coordinate axes, between 0 and 1.
+      X_FT: a RigidTransform from the triad frame T to the frame_id frame F
+      name: the added geometry will have names name + " x-axis", etc.
+    """
+    # x-axis
+    X_TG = RigidTransform(RotationMatrix.MakeYRotation(np.pi / 2), [length / 2., 0, 0])
+    geom = GeometryInstance(X_FT.multiply(X_TG), Cylinder(radius, length), name + " x-axis")
+    geom.set_illustration_properties(MakePhongIllustrationProperties([1, 0, 0, opacity]))
+    scene_graph.RegisterGeometry(source_id, frame_id, geom)
+
+    # y-axis
+    X_TG = RigidTransform(RotationMatrix.MakeXRotation(np.pi / 2),[0, length / 2., 0])
+    geom = GeometryInstance(X_FT.multiply(X_TG), Cylinder(radius, length),name + " y-axis")
+    geom.set_illustration_properties(MakePhongIllustrationProperties([0, 1, 0, opacity]))
+    scene_graph.RegisterGeometry(source_id, frame_id, geom)
+
+    # z-axis
+    X_TG = RigidTransform([0, 0, length / 2.])
+    geom = GeometryInstance(X_FT.multiply(X_TG), Cylinder(radius, length),name + " z-axis")
+    geom.set_illustration_properties(MakePhongIllustrationProperties([0, 0, 1, opacity]))
+    scene_graph.RegisterGeometry(source_id, frame_id, geom)
 
 # SI units
 WIDTH = 180 * 1e-3
@@ -176,16 +210,19 @@ def main():
     source_id = scene_graph.RegisterSource("my_block_source")
     frame_id = scene_graph.RegisterFrame(source_id, GeometryFrame("my_frame", 0))
     geometry_id = scene_graph.RegisterGeometry(source_id, frame_id, 
-        GeometryInstance(RigidTransform(), Mesh('meshes/Bicopter/Bicopter.obj', scale=0.01), "my_geometry_instance"))
+        GeometryInstance(RigidTransform(), Mesh('meshes/Bicopter/Bicopter.obj', scale=0.001), "my_geometry_instance"))
     scene_graph.AssignRole(source_id, geometry_id, IllustrationProperties())
     box_viz = builder.AddSystem(BicopterPoseGenerator(frame_id))
     
     # must add the scene graph to the visualizer to see anything
-    meshcat = StartMeshcat()
+    meshcat = Meshcat()
     MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
 
     builder.Connect(plant.get_output_port(0), box_viz.get_input_port(0))
     builder.Connect(box_viz.get_output_port(0), scene_graph.get_source_pose_port(source_id))
+
+    # add the frame to bicopter
+    AddTriad(source_id, frame_id, scene_graph, length=WIDTH)
 
     builder.ExportInput(plant.get_input_port())
 
