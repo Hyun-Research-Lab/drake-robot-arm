@@ -1,22 +1,19 @@
 import numpy as np
-import matplotlib.pyplot as plt
 
-from pydrake.math import RigidTransform, RotationMatrix, ClosestQuaternion
+from pydrake.math import RigidTransform, RotationMatrix
 from pydrake.systems.analysis import Simulator
-from pydrake.systems.framework import BasicVector, Context, LeafSystem, SystemOutput
-from pydrake.geometry import Box, GeometryFrame, FramePoseVector, GeometryInstance, IllustrationProperties, Mesh, Cylinder, MakePhongIllustrationProperties
+from pydrake.systems.framework import BasicVector, LeafSystem
+from pydrake.geometry import Meshcat, GeometryFrame, Box, FramePoseVector, FrameId, GeometryInstance, IllustrationProperties, Mesh, Cylinder, MakePhongIllustrationProperties
 from pydrake.common.value import AbstractValue
 from pydrake.common.eigen_geometry import Quaternion
 
 from pydrake.all import (
     DiagramBuilder,
-    LogVectorOutput,
     MeshcatVisualizer,
     RigidTransform,
     RotationMatrix,
     SceneGraph,
     Simulator,
-    StartMeshcat,
 )
 
 # https://github.com/kwesiRutledge/OzayGroupExploration/blob/main/drake/manip_tests/config_demo.py
@@ -133,9 +130,10 @@ class ChocolateBar(LeafSystem):
         )
 
 class ChocolateBarPoseGenerator(LeafSystem):
-    def __init__(self,frame_id):
+    def __init__(self,frame_id,meshcat):
         LeafSystem.__init__(self)
         self.frame_id = frame_id
+        self.meshcat = meshcat
         self.state_port = self.DeclareVectorInputPort("x", BasicVector(14))
         self.DeclareAbstractOutputPort("my_pose", lambda: AbstractValue.Make(FramePoseVector()), self.CalcFramePoseOutput)
         
@@ -148,15 +146,24 @@ class ChocolateBarPoseGenerator(LeafSystem):
         q = state[3:7]
 
         try:
-            q = Quaternion(q)
+            R = RotationMatrix(Quaternion(q))
         except:
             q = q / np.linalg.norm(q)
-            q = Quaternion(q)
+            R = RotationMatrix(Quaternion(q))
 
-        output.get_mutable_value().set_value(self.frame_id, RigidTransform(
-            RotationMatrix(quaternion=q),
-            x
-        ))
+        T = RigidTransform(R,x)
+
+        output.get_mutable_value().set_value(self.frame_id, T)
+
+        # update the camera pose to follow the chocolate bar
+        # create a frame at the center of chocolate bar whose x-y plane is always aligned with the world
+        # that is, a frame with only a yaw relative to the world.
+        rpy = R.ToRollPitchYaw()
+        R = RotationMatrix.MakeZRotation(rpy.yaw_angle())
+        T = RigidTransform(R,x)
+        y_bar = T @ np.array([0.1,-1,0.5,1])
+        self.meshcat.SetCameraPose(camera_in_world=y_bar[0:3], target_in_world=x)
+
 
 def main():
     # create the diagram
@@ -165,8 +172,11 @@ def main():
 
     # Setup visualization
     scene_graph = builder.AddSystem(SceneGraph())
+    meshcat = Meshcat()
+    meshcat.SetCamera(meshcat.PerspectiveCamera(fov=60,aspect=16/9,zoom=1))
+    MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
 
-    # Register the geometry with the scene graph.
+    # Register the chocolate bar geometry with the scene graph.
     source_id = scene_graph.RegisterSource("my_block_source")
     frame_id = scene_graph.RegisterFrame(source_id, GeometryFrame("my_frame", 0))
     geometry_id = scene_graph.RegisterGeometry(source_id, frame_id, 
@@ -175,21 +185,36 @@ def main():
             Mesh('meshes/chocolate_bar/Chocolate_Bar.obj', scale=0.001), 
             "my_geometry_instance")
     )
-
     scene_graph.AssignRole(source_id, geometry_id, IllustrationProperties())
-    box_viz = builder.AddSystem(ChocolateBarPoseGenerator(frame_id))
+    box_viz = builder.AddSystem(ChocolateBarPoseGenerator(frame_id,meshcat))
 
     # add triad to chocolate bar frame
     AddTriad(source_id, frame_id, scene_graph, length=WIDTH, radius=HEIGHT)
-    
-    # must add the scene graph to the visualizer to see anything
-    meshcat = StartMeshcat()
-    MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
 
     builder.Connect(plant.get_output_port(0), box_viz.get_input_port(0))
     builder.Connect(box_viz.get_output_port(0), scene_graph.get_source_pose_port(source_id))
-
     builder.ExportInput(plant.get_input_port())
+
+    # now, add some obstacles
+    source_id = scene_graph.RegisterSource("obstacle_1")
+    geometry_id = scene_graph.RegisterAnchoredGeometry(source_id, 
+        GeometryInstance(
+            RigidTransform(RotationMatrix(), [0,5,0.5]),
+            Box(5,1,1),
+            "obstacle_1"
+        )
+    )
+    scene_graph.AssignRole(source_id, geometry_id, IllustrationProperties())
+
+    source_id = scene_graph.RegisterSource("obstacle_2")
+    geometry_id = scene_graph.RegisterAnchoredGeometry(source_id, 
+        GeometryInstance(
+            RigidTransform(RotationMatrix(), [0,5,0.5+2]),
+            Box(5,1,1),
+            "obstacle_2"
+        )
+    )
+    scene_graph.AssignRole(source_id, geometry_id, IllustrationProperties())
 
     diagram = builder.Build()
 
@@ -220,6 +245,7 @@ def main():
         0,0,0,    # velocity
         0,0,0,0]  # d/dt quaternion
     )
+
 
     # Run the simulation.
     simulator.set_target_realtime_rate(1.0)
@@ -267,8 +293,6 @@ def main():
         # in order to get the latest values
         gamepad = meshcat.GetGamepad()
 
-        print(gamepad.axes)
-
         # B button pressed
         if meshcat.GetButtonClicks("Reset") > 0 or gamepad.button_values[1] == 1:
 
@@ -304,11 +328,11 @@ def main():
                 MASS*9.81*(axes[2]+axes[5]+2),
                 axes[1] * 1e-4*1.5, # left stick vertical controls Tx
                 0,
-                axes[3] * 1e-4, # right stick horizontal controls Tz
+                -axes[3] * 1e-4, # right stick horizontal controls Tz
             ]
         )
         
-        simulator.AdvanceTo(simulator.get_context().get_time() + 1/30)
+        simulator.AdvanceTo(simulator.get_context().get_time() + 1/60)
 
 
 if __name__ == "__main__":
