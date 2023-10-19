@@ -315,7 +315,7 @@ def main():
             plant_context.get_mutable_continuous_state_vector().SetFromVector(
                 [0,0,0,    # position
                 q[0], q[1], q[2], q[3],  # unit quaternion (rotation)
-                0,0,0,    # velocity
+                0,0,1,    # velocity
                 0,0,0,0]  # d/dt quaternion
             )
             
@@ -336,8 +336,8 @@ def main():
         # u[2] = left servo motor angle (radians)
         # u[3] = right servo motor angle (radians)
 
-        FL = MASS*9.81*(1+axes[2])/2
-        FR = MASS*9.81*(1+axes[5])/2
+        FL = MASS*9.81*(1+axes[5])/2
+        FR = MASS*9.81*(1+axes[2])/2
         F = 0.5*(FL + FR)
         diagram.get_input_port(0).FixValue(context,
             [
