@@ -1,53 +1,11 @@
 import numpy as np
-import matplotlib.pyplot as plt
-
-from pydrake.math import RigidTransform, RotationMatrix, ClosestQuaternion
-from pydrake.systems.analysis import Simulator
-from pydrake.systems.framework import BasicVector, Context, LeafSystem, SystemOutput
-from pydrake.geometry import Box, GeometryFrame, FramePoseVector, GeometryInstance, IllustrationProperties, Mesh
-from pydrake.common.value import AbstractValue
-from pydrake.common.eigen_geometry import Quaternion
-
-from pydrake.common import temp_directory
-from pydrake.geometry import StartMeshcat
-from pydrake.math import RigidTransform, RollPitchYaw
-from pydrake.multibody.parsing import Parser
-from pydrake.multibody.plant import AddMultibodyPlantSceneGraph
-from pydrake.systems.analysis import Simulator
-from pydrake.systems.framework import DiagramBuilder
-
-from copy import copy
-import matplotlib.pyplot as plt
-import numpy as np
 from pydrake.all import (
     DiagramBuilder,
-    MeshcatVisualizer,
-    RigidTransform,
-    RotationMatrix,
-    DiagramBuilder,
-    MeshcatVisualizer,
-    LeafSystem,
     Simulator,
-    Simulator,
-    CoulombFriction,
-    HalfSpace,
-    LogVectorOutput,
-    SpatialVelocity,
-    BasicVector,
-    AffineSystem,
-    ConstantVectorSource,
-)
-
-from pydrake.all import (
-    DiagramBuilder,
-    LogVectorOutput,
+    Parser,
+    AddMultibodyPlantSceneGraph,
     MeshcatVisualizer,
-    RigidTransform,
-    RotationMatrix,
-    SceneGraph,
-    Simulator,
     Meshcat,
-    MultibodyPlant,
     JointIndex,
     BodyIndex,
 )
@@ -79,8 +37,6 @@ def main():
 
     J1 = bicopter_model.GetJointByName("J1")
     J3 = bicopter_model.GetJointByName("J3")
-    #J1.set_angle(context, 0.2)
-    #J3.set_angle(context, -0.2)
 
     body = bicopter_model.GetBodyByName("body")
     bicopter_model.mutable_gravity_field().set_gravity_vector([0, 0, 0])
@@ -96,10 +52,7 @@ def main():
     simulator = Simulator(diagram, root_context)
     simulator.Initialize()
 
-    # meshcat.StartRecording()
     simulator.set_target_realtime_rate(1.0)
-    # meshcat.StopRecording()
-    # meshcat.PublishRecording()
 
     def deadzone(x):
         y = np.zeros_like(x)
