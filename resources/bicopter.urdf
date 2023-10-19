@@ -1,0 +1,141 @@
+<?xml version="1.0"?>
+<robot name="bicopter">
+
+  <material name="Red">
+    <color rgba="1.0 0.0 0.0 1.0"/>
+  </material>
+
+  <material name="Magenta">
+    <color rgba="1.0 0.0 1.0 1.0"/>
+  </material>
+
+  <link name="body">
+    <visual>
+      <origin xyz="0 0 0.005"/>
+      <geometry>
+        <box size="0.300 0.060 0.01" />
+      </geometry>
+     </visual>
+     <visual>
+      <origin xyz="0.140 0 0.020"/>
+      <geometry>
+        <box size="0.020 0.020 0.040" />
+      </geometry>
+     </visual>
+     <visual>
+      <origin xyz="-0.140 0 0.020"/>
+      <geometry>
+        <box size="0.020 0.020 0.040" />
+      </geometry>
+     </visual>
+  </link>
+
+  <link name="propguard_right">
+    <visual>
+      <origin xyz="0 0 0.02"/>
+      <geometry>
+        <cylinder radius="0.070" length="0.02"/>
+      </geometry>
+     </visual>
+     <visual>
+      <origin rpy="1.5708 0 1.5708"></origin>
+      <geometry>
+        <cylinder radius="0.01" length="0.07"/>
+      </geometry>
+     </visual>
+  </link>
+
+  <link name="propeller_right">
+    <visual>
+      <origin xyz="0.03 0 0.0" />
+      <geometry>
+        <box size="0.060 0.005 0.002"/>
+      </geometry>
+      <material name="Magenta"/>
+     </visual>
+    <visual>
+      <origin xyz="-0.015 0.02598 0" rpy="0 0 2.094"/>
+      <geometry>
+        <box size="0.060 0.005 0.002"/>
+      </geometry>
+      <material name="Magenta"/>
+     </visual>
+     <visual>
+      <origin xyz="-0.015 -0.02598 0" rpy="0 0 4.1888"/>
+      <geometry>
+        <box size="0.060 0.005 0.002"/>
+      </geometry>
+      <material name="Magenta"/>
+     </visual>
+  </link>
+
+  <link name="propguard_left">
+    <visual>
+      <origin xyz="0 0 0.02"/>
+      <geometry>
+        <cylinder radius="0.070" length="0.02"/>
+      </geometry>
+     </visual>
+     <visual>
+      <origin rpy="1.5708 0 1.5708"></origin>
+      <geometry>
+        <cylinder radius="0.01" length="0.07"/>
+      </geometry>
+     </visual>
+  </link>
+
+  <link name="propeller_left">
+    <visual>
+      <origin xyz="0.03 0 0.0" />
+      <geometry>
+        <box size="0.060 0.005 0.002"/>
+      </geometry>
+      <material name="Red"/>
+     </visual>
+    <visual>
+      <origin xyz="-0.015 0.02598 0" rpy="0 0 2.094"/>
+      <geometry>
+        <box size="0.060 0.005 0.002"/>
+      </geometry>
+      <material name="Red"/>
+     </visual>
+     <visual>
+      <origin xyz="-0.015 -0.02598 0" rpy="0 0 4.1888"/>
+      <geometry>
+        <box size="0.060 0.005 0.002"/>
+      </geometry>
+      <material name="Red"/>
+     </visual>
+  </link>
+
+  <joint name="J1" type="revolute">
+    <parent link="body"/>
+    <child link="propguard_right"/>
+    <origin xyz="0.140 0 0.04"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-0.785" upper="0.785"/>
+  </joint>
+
+  <joint name="J2" type="continuous">
+    <parent link="propguard_right"/>
+    <child link="propeller_right"/>
+    <origin xyz="0 0 0.030"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <joint name="J3" type="revolute">
+    <parent link="body"/>
+    <child link="propguard_left"/>
+    <origin xyz="-0.140 0 0.04"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-0.785" upper="0.785"/>
+  </joint>
+
+  <joint name="J4" type="continuous">
+    <parent link="propguard_left"/>
+    <child link="propeller_left"/>
+    <origin xyz="0 0 0.030"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+</robot>
