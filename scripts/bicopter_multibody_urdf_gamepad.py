@@ -82,11 +82,16 @@ def main():
     J1.set_angle(context, 0.2)
     J3.set_angle(context, -0.2)
     body = plant.GetBodyByName("body")
-    plant.SetFreeBodyPose(context, body, RigidTransform(RotationMatrix(), [0, 0, 0.5]))
+    plant.SetFreeBodyPose(context, body, RigidTransform(RotationMatrix().MakeXRotation(1), [0, 0, 0.5]))
+    plant.mutable_gravity_field().set_gravity_vector([0, 0, 0])
     
     simulator = Simulator(diagram, root_context)
     simulator.Initialize()
-    # simulator.AdvanceTo(1.0) # error
+
+    meshcat.StartRecording()
+    simulator.set_target_realtime_rate(1.0)
+    simulator.AdvanceTo(1.0)
+    meshcat.StopRecording()
 
     while True:
         pass
