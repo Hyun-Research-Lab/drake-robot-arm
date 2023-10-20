@@ -8,23 +8,75 @@ from pydrake.all import (
     Meshcat,
     JointIndex,
     BodyIndex,
+    LeafSystem,
+    RotationMatrix,
+    RigidTransform,
+    Quaternion,
+    BasicVector,
+    AbstractValue,
+    FramePoseVector,
+    SceneGraph,
+    MultibodyPlant,
+    IllustrationProperties,
 )
+
+class BicopterPoseSystem(LeafSystem):
+    def __init__(self):
+        LeafSystem.__init__(self)
+        self.state_port = self.DeclareVectorInputPort("plant_state", BasicVector(14))
+        self.source_pose_port = self.DeclareAbstractInputPort("source_pose", AbstractValue.Make(FramePoseVector()))
+        self.DeclareAbstractOutputPort("y", lambda: AbstractValue.Make(FramePoseVector()), self.CalcFramePoseOutput)
+        
+    def CalcFramePoseOutput(self, context, output):
+        # state = self.state_port.Eval(context)
+        # x = state[:3]
+        # q = state[3:7]
+
+        t = context.get_time()
+
+        frame_pose_vectors = self.source_pose_port.Eval(context)
+        X_WB = RigidTransform(RotationMatrix().MakeXRotation(t),[0,0,0]).GetAsMatrix4()
+
+        for frame_id in frame_pose_vectors.ids():
+            old_pose = frame_pose_vectors.value(frame_id).GetAsMatrix4()
+            new_pose = RigidTransform(X_WB @ old_pose)
+            frame_pose_vectors.set_value(frame_id, new_pose)
+        output.set_value(frame_pose_vectors)
+
+
+        # # normalize q to obtain a unit quaternion
+        # q /= np.linalg.norm(q)
+        # R = RotationMatrix(Quaternion(q))
+        # t = context.get_time()
+
+        # output.get_mutable_value().set_value(1, RigidTransform(
+        #     RotationMatrix(),
+        #     [0, 0, t/10]
+        # ))
 
 
 def main():
     builder = DiagramBuilder()
-    bicopter_model, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=0)
+    scene_graph = builder.AddSystem(SceneGraph())
+    bicopter_model = builder.AddSystem(MultibodyPlant(time_step=0.0))
+    poser = builder.AddSystem(BicopterPoseSystem())
+    
+    # very important! Call RegisterAsSourceForSceneGraph before calling AddModels()
+    source_id = bicopter_model.RegisterAsSourceForSceneGraph(scene_graph)
     Parser(bicopter_model).AddModels("./resources/bicopter.urdf")
     bicopter_model.Finalize()
+    
+    # We go off script here. Instead of directly connecting the bicopter model to the scene graph,
+    # we insert the BicopterPoseSystem in between. This will allow us to set the pose of the bicopter model
+    # whenever the bicopter model (MultibodyPlant) gives a input query for the pose.
+    builder.Connect(scene_graph.get_query_output_port(), bicopter_model.get_geometry_query_input_port())
+    builder.Connect(bicopter_model.get_geometry_poses_output_port(), poser.GetInputPort("source_pose"))
+    builder.Connect(poser.get_output_port(), scene_graph.get_source_pose_port(source_id))
 
-    # For more detailed information, you can iterate through bodies, joints, and actuators:
-    for body_index in range(bicopter_model.num_bodies()):
-        body = bicopter_model.get_body(BodyIndex(body_index))
-        print(f"Body: {body.name()}, Model Instance: {body.model_instance()}")
-
-    for i in range(bicopter_model.num_joints()):
-        joint = bicopter_model.get_joint(JointIndex(i))
-        print(f"Joint: {joint.name()}, Model Instance: {joint.model_instance()}")
+    inspector = scene_graph.model_inspector()
+    print(inspector.GetAllGeometryIds())
+    print(inspector.num_sources())
+    print(inspector.GetAllSourceIds())
 
     meshcat = Meshcat()
     MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
@@ -33,21 +85,21 @@ def main():
     # https://github.com/RobotLocomotion/drake/blob/67671ab0c97be45434a8b6f9609901f685c55462/doc/_pages/troubleshooting.md
     # github.com/RobotLocomotion/drake/ --> drake/doc/_pages/troubleshooting.md
     root_context = diagram.CreateDefaultContext()
-    context = bicopter_model.GetMyContextFromRoot(root_context=root_context)
+    bicopter_model_context = bicopter_model.GetMyContextFromRoot(root_context=root_context)
 
-    J1 = bicopter_model.GetJointByName("J1")
-    J3 = bicopter_model.GetJointByName("J3")
+    J1 = bicopter_model.GetJointByName("J1") # right sevro
+    J3 = bicopter_model.GetJointByName("J3") # left servo
 
-    body = bicopter_model.GetBodyByName("body")
     bicopter_model.mutable_gravity_field().set_gravity_vector([0, 0, 0])
-    #bicopter_model.SetFreeBodyPose(context, body, RigidTransform(RotationMatrix().MakeXRotation(1), [0, 0, 0.5]))
+    bicopter_body = bicopter_model.GetBodyByName("body")
+    bicopter_model.SetFreeBodyPose(bicopter_model_context, bicopter_body, RigidTransform([0, 0, 0]))
 
+    
     # Gamepad
     print('To connect gamepad, switch to browser tab with Meshcat (refresh if necessary), and then spam the A button on the gamepad.')
     while(meshcat.GetGamepad().index == None):
         pass
     print('Connected!')
-    
     
     simulator = Simulator(diagram, root_context)
     simulator.Initialize()
@@ -66,16 +118,15 @@ def main():
     while True:
         gamepad = meshcat.GetGamepad()
         axes = deadzone(gamepad.axes)
-        axes = gamepad.axes
-        print(axes)
+        #axes = gamepad.axes
 
-        # B button pressed
-        if gamepad.button_values[1] == 1:
-            pass
+        # # B button pressed
+        # if gamepad.button_values[1] == 1:
+        #     pass
             
-        J1.set_angle(context, axes[4])
-        J3.set_angle(context, axes[1])
-        
+        # # visual only
+        J1.set_angle(bicopter_model_context, axes[4])
+        J3.set_angle(bicopter_model_context, axes[1])
         
         simulator.AdvanceTo(simulator.get_context().get_time() + 1/60)
 
