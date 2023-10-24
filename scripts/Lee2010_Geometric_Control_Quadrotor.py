@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.linalg import logm
 from pydrake.all import (
+    Context,
+    ContinuousState,
     DiagramBuilder,
     Simulator,
     Parser,
@@ -20,6 +22,17 @@ from pydrake.all import (
     MultibodyPlant,
     IllustrationProperties,
 )
+
+# helper functions
+def VeeMap(R):
+    return np.array([R[2,1], R[0,2], R[1,0]])
+
+def HatMap(v):
+    return np.array([
+        [0, -v[2], v[1]],
+        [v[2], 0, -v[0]],
+        [-v[1], v[0], 0]
+    ])
 
 # Geometric tracking control of a quadrotor UAV on SE(3). (Lee, 2010)
 # https://ieeexplore.ieee.org/abstract/document/5717652
@@ -104,10 +117,19 @@ class Quadrotor(LeafSystem):
             np.concatenate((x_dot, q_dot, x_ddot, q_ddot))
         )
 
+# controller is a discrete-time system
 class QuadrotorController(LeafSystem):
     def __init__(self):
         LeafSystem.__init__(self)
-        self.DeclareVectorInputPort("x", BasicVector(14))
+
+        # input vector: current states from the plant
+        self.DeclareVectorInputPort("u", BasicVector(14))
+
+        # get access to the previous values of the controller
+        self.DeclareDiscreteState(1+3+3+3+9) # time, Omega, Omega_d, Omega_d_dot, Rd
+        self.DeclarePeriodicDiscreteUpdateEvent(period_sec=0.001, offset_sec=0.0, update=self.MyUpdate)
+        
+        # output = [f, M] where f is a scalar and M is a 3x1 vector
         self.DeclareVectorOutputPort("y", BasicVector(4), self.CalcOutput)
 
         # controller paramters
@@ -119,13 +141,6 @@ class QuadrotorController(LeafSystem):
         self.k_Omega = 2.54          # angular velocity gain
         self.J = np.diag([0.0820, 0.0845, 0.1377])
         self.J_inv = np.linalg.inv(self.J)
-
-        # needed to calculate Omega_d, Omega_d_dot
-        self.t_prev = 0
-        self.Omega_prev = np.array([0,0,0])
-        self.Omega_d_prev = np.array([0,0,0])
-        self.Omega_d_dot_prev = np.array([0,0,0])
-        self.Rd_prev = np.eye(3)
 
         # desired trajectory information
         self.xd = np.array([0,0,0])
@@ -141,99 +156,105 @@ class QuadrotorController(LeafSystem):
         self.xd_ddot = np.array([0.0, -0.4*np.pi**2*np.sin(np.pi*t), -0.6*np.pi**2*np.cos(np.pi*t)])
         self.b1d = np.array([np.cos(np.pi*t), np.sin(np.pi*t), 0])
 
-    # helper functions
-    def VeeMap(self, R):
-        return np.array([R[2,1], R[0,2], R[1,0]])
-    
-    def HatMap(self, v):
-        return np.array([
-            [0, -v[2], v[1]],
-            [v[2], 0, -v[0]],
-            [-v[1], v[0], 0]
-        ])
+    # update every time step
+    def MyUpdate(self, context, discrete_state):
+
+        prev_state = context.get_discrete_state().value()
+        prev_time = prev_state[0]
+        prev_Omega = prev_state[1:4]
+        prev_Omega_d = prev_state[4:7]
+        prev_Omega_d_dot = prev_state[7:10]
+        prev_Rd = prev_state[10:].reshape(3,3)
+
+        
+        # update time
+        next_state = discrete_state.get_mutable_value()
+        next_state[0] = 1.005*prev_time + 1
+
+        # print(prev_state)
+        
+        # next_time = 6
+        # discrete_state.set_value(6)
+
+        # get the most recent state of the controller
+        # prev_time = context.get_discrete_state()[0]
+
+        # next_time[0] = 1.005*prev_time+1
+        # # next_Omega[:] = 1.005*prev_Omega + np.ones(3)
+        
+        # print(next_time[0])
+
+        # get the current of the quadrotor plant
+        # quadrotor_state = self.EvalVectorInput(context, 0).CopyToVector()
+        # x = quadrotor_state[:3]   # positions
+        # q = quadrotor_state[3:7]  # quaternion (rotation)
+        # x_dot = quadrotor_state[7:10] # velocity
+        # q_dot = quadrotor_state[10:]  # d/dt quaternion
+
+        # q = q / np.linalg.norm(q)
+        # R = RotationMatrix(Quaternion(q)).matrix()
+
+        # # get angular velocity Omega from quaternion and its derivative
+        # q0,q1,q2,q3 = q
+        # G = np.array([
+        #     [-q1, q0, q3, -q2],
+        #     [-q2, -q3, q0, q1],
+        #     [-q3, q2, -q1, q0]
+        # ])
+        # Omega = 2 * G @ q_dot
+
+        # # get the desired trajectory
+        # self.ComputeDesiredTrajectory(context)
+        
+        # # calculate b3d
+        # e_x = x - self.xd
+        # e_v = x_dot - self.xd_dot
+
+        # e3 = np.array([0,0,1])
+        # num = -self.k_x*e_x - self.k_v*e_v - self.m*self.g*e3 + self.m*self.xd_ddot
+        # b3d = -num / np.linalg.norm(num)
+
+        # # calculate total thrust
+        # f = np.dot(-num, R @ e3)
+        # # print(f)
+
+        # # calculate b2d
+        # num = np.cross(b3d, self.b1d)
+        # b2d = num / np.linalg.norm(num)
+
+        # # calculate Rd
+        # b1 = np.cross(b2d, b3d)
+        # Rd = np.array([b1, b2d, b3d])
+
+        # # calculate Omega_d, Omega_d_dot
+        # Omega_d_hat = 1/dt * logm(self.Rd_prev.transpose() @ Rd)
+        # Omega_d = self.VeeMap(Omega_d_hat)
+        # Omega_d_dot = 1/dt * (Omega_d - self.Omega_d_prev)
+
+        # # compute error terms
+        # e_R = 0.5*self.VeeMap(Rd.transpose() @ R - R.transpose() @ Rd)
+        # e_Omega = Omega - R.transpose() @ Rd @ Omega_d
+
+        # # compute total moment
+        # M = -self.k_R*e_R - self.k_Omega*e_Omega + np.cross(Omega, self.J @ Omega) - \
+        #     self.J @ (self.HatMap(Omega) @ R.transpose() @ Rd @ Omega_d - R.transpose() @ Rd @ Omega_d_dot)
+        
+        # # update previous values
+        # self.t_prev = t
+        # self.Omega_prev = Omega
+        # self.Omega_d_prev = Omega_d
+        # self.Rd_prev = Rd
 
     def CalcOutput(self, context, output):
 
-        # get the current state
-        t = context.get_time()
-        print(t)
-        dt = t - self.t_prev
-        if dt < 1e-10:
-            #print('sim time:',t,self.t_prev)
-            output.set_value(np.array([0,0,0,0]))
-            return
-        # print('sim time:',t)
-
-        plant_state = self.EvalVectorInput(context, 0).CopyToVector()
-
-        # unpack state variables
-        x = plant_state[:3]   # positions
-        q = plant_state[3:7]  # quaternion (rotation)
-        x_dot = plant_state[7:10] # velocity
-        q_dot = plant_state[10:]  # d/dt quaternion
-
-        # get rotation matrix from quaternion
-        q = q / np.linalg.norm(q)
-        R = RotationMatrix(Quaternion(q)).matrix()
-
-        # get angular velocity from quaternion and its derivative
-        q0,q1,q2,q3 = q
-        G = np.array([
-            [-q1, q0, q3, -q2],
-            [-q2, -q3, q0, q1],
-            [-q3, q2, -q1, q0]
-        ])
-        Omega = 2 * G @ q_dot
-
-        # get the desired trajectory
-        self.ComputeDesiredTrajectory(context)
-        
-        # calculate b3d
-        e_x = x - self.xd
-        e_v = x_dot - self.xd_dot
-
-        e3 = np.array([0,0,1])
-        num = -self.k_x*e_x - self.k_v*e_v - self.m*self.g*e3 + self.m*self.xd_ddot
-        b3d = -num / np.linalg.norm(num)
-
-        # calculate total thrust
-        f = np.dot(-num, R @ e3)
-        # print(f)
-
-        # calculate b2d
-        num = np.cross(b3d, self.b1d)
-        b2d = num / np.linalg.norm(num)
-
-        # calculate Rd
-        b1 = np.cross(b2d, b3d)
-        Rd = np.array([b1, b2d, b3d])
-
-        # calculate Omega_d, Omega_d_dot
-        Omega_d_hat = 1/dt * logm(self.Rd_prev.transpose() @ Rd)
-        Omega_d = self.VeeMap(Omega_d_hat)
-        Omega_d_dot = 1/dt * (Omega_d - self.Omega_d_prev)
-
-        # compute error terms
-        e_R = 0.5*self.VeeMap(Rd.transpose() @ R - R.transpose() @ Rd)
-        e_Omega = Omega - R.transpose() @ Rd @ Omega_d
-
-        # compute total moment
-        M = -self.k_R*e_R - self.k_Omega*e_Omega + np.cross(Omega, self.J @ Omega) - \
-            self.J @ (self.HatMap(Omega) @ R.transpose() @ Rd @ Omega_d - R.transpose() @ Rd @ Omega_d_dot)
-        
-        # update previous values
-        self.t_prev = t
-        self.Omega_prev = Omega
-        self.Omega_d_prev = Omega_d
-        self.Rd_prev = Rd
-
         # output to plant
-        output.set_value(np.array([f,M[0],M[1],M[2]]))
+        # output.set_value(np.array([f,M[0],M[1],M[2]]))
+        output.set_value(np.array([50,0,0,0]))
 
 class PoseSystem(LeafSystem):
     def __init__(self):
         LeafSystem.__init__(self)
-        self.state_port = self.DeclareVectorInputPort("plant_state", BasicVector(14))
+        self.state_port = self.DeclareVectorInputPort("quadrotor_state", BasicVector(14))
         self.source_pose_port = self.DeclareAbstractInputPort("source_pose", AbstractValue.Make(FramePoseVector()))
         self.DeclareAbstractOutputPort("y", lambda: AbstractValue.Make(FramePoseVector()), self.CalcFramePoseOutput)
         
@@ -278,7 +299,7 @@ def main():
     builder.Connect(poser.get_output_port(), scene_graph.get_source_pose_port(source_id))
 
     builder.Connect(controller.get_output_port(), plant.get_input_port())
-    builder.Connect(plant.get_output_port(), poser.GetInputPort("plant_state"))
+    builder.Connect(plant.get_output_port(), poser.GetInputPort("quadrotor_state"))
     builder.Connect(plant.get_output_port(), controller.get_input_port())
 
     meshcat = Meshcat()
@@ -307,7 +328,7 @@ def main():
     simulator.Initialize()
 
     meshcat.StartRecording()
-    simulator.set_target_realtime_rate(1.0)
+    # simulator.set_target_realtime_rate(1.0)
     simulator.AdvanceTo(1.0)
     meshcat.StopRecording()
     meshcat.PublishRecording()
