@@ -1,0 +1,119 @@
+<?xml version="1.0"?>
+<robot name="quadrotor_Lee2010">
+
+
+	<!-- https://www.bricklink.com/catalogColors.asp -->
+	<!-- Neon Orange -->
+    <material name="Orange">
+        <color rgba="0.98 0.349 0.278 1.0" />
+    </material>
+
+	<!-- Red -->
+	<material name="Red">
+        <color rgba="0.702 0.0 0.024 1.0" />
+    </material>
+
+	<!-- Blue -->
+	<material name="Blue">
+        <color rgba="0.0 0.341 0.651 1.0" />
+    </material>
+
+	<!-- Dark Blueish Gray -->
+	<material name="Gray">
+		<color rgba="0.42 0.353 0.353 1.0" />
+	</material>
+
+    <material name="White">
+        <color rgba="1.0 1.0 1.0 1.0" />
+    </material>
+
+    <material name="Cyan">
+        <color rgba="0.278 0.91 0.98 1.0" />
+    </material>
+
+	<material name="Black">
+        <color rgba="0.0 0.0 0.0 1.0" />
+    </material>
+
+
+    <link name="body">
+        <inertial>
+            <mass value="4.34" />
+            <inertia ixx="0.0820" ixy="0" ixz="0" iyy="0.0845" iyz="0" izz="0.1377" />
+        </inertial>
+        <!-- center body -->
+        <visual>
+			<origin xyz="0 0 0.0125"/>
+            <material name="White" />
+            <geometry>
+                <cylinder radius="0.05" length="0.025" />
+            </geometry>
+        </visual>
+		<visual>
+			<origin xyz="0 0 -0.0125"/>
+            <material name="Black" />
+            <geometry>
+                <cylinder radius="0.05" length="0.025" />
+            </geometry>
+        </visual>
+        <!-- spokes -->
+        <visual>
+            <origin xyz="0 0.1575 0" rpy="1.5708 0 0"/>
+            <material name="Gray" />
+            <geometry>
+                <cylinder radius="0.01" length="0.315" />
+            </geometry>
+        </visual>
+		<visual>
+            <origin xyz="0 -0.1575 0" rpy="1.5708 0 0"/>
+            <material name="Gray" />
+            <geometry>
+                <cylinder radius="0.01" length="0.315" />
+            </geometry>
+        </visual>
+		<visual>
+            <origin xyz="0.1575 0 0" rpy="0 1.5708 0"/>
+            <material name="Gray" />
+            <geometry>
+                <cylinder radius="0.01" length="0.315" />
+            </geometry>
+        </visual>
+		<visual>
+            <origin xyz="-0.1575 0 0" rpy="0 1.5708 0"/>
+            <material name="Gray" />
+            <geometry>
+                <cylinder radius="0.01" length="0.315" />
+            </geometry>
+        </visual>
+		<!-- Rotor Guards -->
+		<visual>
+            <origin xyz="0.315 0 0"/>
+            <material name="Red" />
+            <geometry>
+                <cylinder radius="0.05" length="0.05" />
+            </geometry>
+        </visual>
+		<visual>
+            <origin xyz="-0.315 0 0"/>
+            <material name="Red" />
+            <geometry>
+                <cylinder radius="0.05" length="0.05" />
+            </geometry>
+        </visual>
+		<visual>
+            <origin xyz="0 0.315 0"/>
+            <material name="Blue" />
+            <geometry>
+                <cylinder radius="0.05" length="0.05" />
+            </geometry>
+        </visual>
+		<visual>
+            <origin xyz="0 -0.315 0"/>
+            <material name="Blue" />
+            <geometry>
+                <cylinder radius="0.05" length="0.05" />
+            </geometry>
+        </visual>
+    </link>
+
+</robot>
