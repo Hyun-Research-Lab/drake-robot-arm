@@ -23,6 +23,11 @@
 		<color rgba="0.42 0.353 0.353 1.0" />
 	</material>
 
+	<!-- Dark Azure -->
+	<material name="Azure">
+        <color rgba="0.0 0.624 0.878 1.0" />
+    </material>
+
     <material name="White">
         <color rgba="1.0 1.0 1.0 1.0" />
     </material>
@@ -95,7 +100,7 @@
         </visual>
 		<visual>
             <origin xyz="-0.315 0 0"/>
-            <material name="Red" />
+            <material name="Orange" />
             <geometry>
                 <cylinder radius="0.05" length="0.05" />
             </geometry>
@@ -109,7 +114,7 @@
         </visual>
 		<visual>
             <origin xyz="0 -0.315 0"/>
-            <material name="Blue" />
+            <material name="Azure" />
             <geometry>
                 <cylinder radius="0.05" length="0.05" />
             </geometry>
