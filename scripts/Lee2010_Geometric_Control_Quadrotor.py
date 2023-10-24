@@ -72,6 +72,7 @@ class Quadrotor(LeafSystem):
 
         # Accleration in Spatial Frame
         e3 = np.array([0,0,1])
+        # print(f)
         x_ddot = 1/self.m * (self.m*self.g * e3 - f * (R @ e3))
 
         # see table 5.18 in Quaternion.pdf
@@ -155,11 +156,13 @@ class QuadrotorController(LeafSystem):
 
         # get the current state
         t = context.get_time()
+        print(t)
         dt = t - self.t_prev
         if dt < 1e-10:
+            #print('sim time:',t,self.t_prev)
             output.set_value(np.array([0,0,0,0]))
             return
-        print('sim')
+        # print('sim time:',t)
 
         plant_state = self.EvalVectorInput(context, 0).CopyToVector()
 
@@ -195,6 +198,7 @@ class QuadrotorController(LeafSystem):
 
         # calculate total thrust
         f = np.dot(-num, R @ e3)
+        # print(f)
 
         # calculate b2d
         num = np.cross(b3d, self.b1d)
@@ -205,9 +209,9 @@ class QuadrotorController(LeafSystem):
         Rd = np.array([b1, b2d, b3d])
 
         # calculate Omega_d, Omega_d_dot
-        Omega_d_hat = 1/(t-self.t_prev) * logm(self.Rd_prev.transpose() @ Rd)
+        Omega_d_hat = 1/dt * logm(self.Rd_prev.transpose() @ Rd)
         Omega_d = self.VeeMap(Omega_d_hat)
-        Omega_d_dot = 1/(t-self.t_prev) * (Omega_d - self.Omega_d_prev)
+        Omega_d_dot = 1/dt * (Omega_d - self.Omega_d_prev)
 
         # compute error terms
         e_R = 0.5*self.VeeMap(Rd.transpose() @ R - R.transpose() @ Rd)
