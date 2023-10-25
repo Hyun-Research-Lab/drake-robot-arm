@@ -217,6 +217,10 @@ class QuadrotorController(LeafSystem):
         # calculate total thrust
         e_x = x - xd
         e_v = x_dot - xd_dot
+
+        e_x = 0
+        e_v = 0
+
         e3 = np.array([0,0,1])
         tmp = -self.k_x*e_x - self.k_v*e_v - self.m*self.g*e3 + self.m*xd_ddot
         total_thrust = np.dot(-tmp, R @ e3)
@@ -240,11 +244,12 @@ class QuadrotorController(LeafSystem):
         e_R = 0.5*VeeMap(Rd.transpose() @ R - R.transpose() @ Rd)
         e_omega = omega - R.transpose() @ Rd @ omega_d
 
-        # PROBLEM: M is way to large at the beginning
         # compute total moment
         M = -self.k_R*e_R - self.k_omega*e_omega + np.cross(omega, self.J @ omega) - \
             self.J @ (HatMap(omega) @ R.transpose() @ Rd @ omega_d - R.transpose() @ Rd @ omega_d_dot)
-        # print(M)
+
+        # Attitude Tracking works! The error goes to zero
+        # print(e_R,e_omega)
         
         # update previous values
         next_state = discrete_state.get_mutable_value()
@@ -376,7 +381,7 @@ def main():
     #     [0,0.0314,-0.9995]
     # ]))
 
-    R = RotationMatrix().MakeZRotation(np.pi/2).MakeXRotation(np.pi/4)
+    R = RotationMatrix().MakeZRotation(np.pi/2)
     q = R.ToQuaternion().wxyz()
     plant_context.get_mutable_continuous_state_vector().SetFromVector(
         [0,0,0,    # position
@@ -389,7 +394,7 @@ def main():
     simulator.Initialize()
 
     meshcat.StartRecording()
-    simulator.set_target_realtime_rate(1.0)
+    #simulator.set_target_realtime_rate(1.0)
     simulator.AdvanceTo(6.0)
     #simulator.AdvanceTo(10.0)
     meshcat.StopRecording()
@@ -477,60 +482,60 @@ def main():
     axs.set_ylabel('Attitude Error')
     plt.show()
 
-    # plot the position data
-    position_log = position_logger.FindLog(root_context)
-    fig, axs = plt.subplots(3)
-    fig.suptitle('Position')
-    t = position_log.sample_times()
-    data = position_log.data()
-    axs[0].plot(t, data[0,:])
-    axs[0].set_ylabel('x')
-    axs[0].set_ylim([-1,1])
-    axs[1].plot(t, data[1,:])
-    axs[1].set_ylabel('y')
-    axs[1].set_ylim([-1,1])
-    axs[2].plot(t, data[2,:])
-    axs[2].set_ylabel('z')
-    axs[2].set_ylim([-1,1])
-    plt.show()
+    # # plot the position data
+    # position_log = position_logger.FindLog(root_context)
+    # fig, axs = plt.subplots(3)
+    # fig.suptitle('Position')
+    # t = position_log.sample_times()
+    # data = position_log.data()
+    # axs[0].plot(t, data[0,:])
+    # axs[0].set_ylabel('x')
+    # axs[0].set_ylim([-1,1])
+    # axs[1].plot(t, data[1,:])
+    # axs[1].set_ylabel('y')
+    # axs[1].set_ylim([-1,1])
+    # axs[2].plot(t, data[2,:])
+    # axs[2].set_ylabel('z')
+    # axs[2].set_ylim([-1,1])
+    # plt.show()
 
-    # plot omega and omega_d
-    omega_log = omega_logger.FindLog(root_context)
-    fig, axs = plt.subplots(3)
-    fig.suptitle('Omega')
-    t = omega_log.sample_times()
-    data = omega_log.data()
-    axs[0].plot(t, data[0,:], t, data[3,:],'--')
-    axs[0].set_ylim([-10,10])
-    axs[0].legend(['omega', 'omega_d'])
-    axs[1].plot(t, data[1,:], t, data[4,:],'--')
-    axs[1].set_ylim([-1,1])
-    axs[1].legend(['omega', 'omega_d'])
-    axs[2].plot(t, data[2,:], t, data[5,:],'--')
-    axs[2].set_ylim([-1,1])
-    axs[2].legend(['omega', 'omega_d'])
-    plt.show()
+    # # plot omega and omega_d
+    # omega_log = omega_logger.FindLog(root_context)
+    # fig, axs = plt.subplots(3)
+    # fig.suptitle('Omega')
+    # t = omega_log.sample_times()
+    # data = omega_log.data()
+    # axs[0].plot(t, data[0,:], t, data[3,:],'--')
+    # axs[0].set_ylim([-10,10])
+    # axs[0].legend(['omega', 'omega_d'])
+    # axs[1].plot(t, data[1,:], t, data[4,:],'--')
+    # axs[1].set_ylim([-1,1])
+    # axs[1].legend(['omega', 'omega_d'])
+    # axs[2].plot(t, data[2,:], t, data[5,:],'--')
+    # axs[2].set_ylim([-1,1])
+    # axs[2].legend(['omega', 'omega_d'])
+    # plt.show()
 
 
-    # plot the thrust inputs
-    thrust_log = thrust_logger.FindLog(root_context)
-    fig, axs = plt.subplots(4)
-    fig.suptitle('Thrust Inputs')
-    t = thrust_log.sample_times()
-    data = thrust_log.data()
-    axs[0].plot(t, data[0,:])
-    axs[0].set_ylim([-50,50])
-    axs[0].set_ylabel('f1')
-    axs[1].plot(t, data[1,:])
-    axs[1].set_ylabel('f2')
-    axs[1].set_ylim([-50,50])
-    axs[2].plot(t, data[2,:])
-    axs[2].set_ylabel('f3')
-    axs[2].set_ylim([-50,50])
-    axs[3].plot(t, data[3,:])
-    axs[3].set_ylabel('f4')
-    axs[3].set_ylim([-50,50])
-    plt.show()
+    # # plot the thrust inputs
+    # thrust_log = thrust_logger.FindLog(root_context)
+    # fig, axs = plt.subplots(4)
+    # fig.suptitle('Thrust Inputs')
+    # t = thrust_log.sample_times()
+    # data = thrust_log.data()
+    # axs[0].plot(t, data[0,:])
+    # axs[0].set_ylim([-50,50])
+    # axs[0].set_ylabel('f1')
+    # axs[1].plot(t, data[1,:])
+    # axs[1].set_ylabel('f2')
+    # axs[1].set_ylim([-50,50])
+    # axs[2].plot(t, data[2,:])
+    # axs[2].set_ylabel('f3')
+    # axs[2].set_ylim([-50,50])
+    # axs[3].plot(t, data[3,:])
+    # axs[3].set_ylabel('f4')
+    # axs[3].set_ylim([-50,50])
+    # plt.show()
 
     while True:
         pass

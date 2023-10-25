@@ -28,12 +28,16 @@
         <color rgba="0.0 0.624 0.878 1.0" />
     </material>
 
+    <material name="Green">
+        <color rgba="0.0 0.824 0.278 1.0" />
+    </material>
+    
     <material name="White">
         <color rgba="1.0 1.0 1.0 1.0" />
     </material>
 
     <material name="Cyan">
-        <color rgba="0.278 0.91 0.98 1.0" />
+        <color rgba="0.71 0.91 0.3 1.0" />
     </material>
 
 	<material name="Black">
@@ -56,7 +60,7 @@
         </visual>
 		<visual>
 			<origin xyz="0 0 -0.0125"/>
-            <material name="Black" />
+            <material name="Blue" />
             <geometry>
                 <cylinder radius="0.05" length="0.025" />
             </geometry>
@@ -93,28 +97,28 @@
 		<!-- Rotor Guards -->
 		<visual>
             <origin xyz="0.315 0 0"/>
-            <material name="Red" />
+            <material name="Green" />
             <geometry>
                 <cylinder radius="0.05" length="0.05" />
             </geometry>
         </visual>
 		<visual>
             <origin xyz="-0.315 0 0"/>
-            <material name="Orange" />
+            <material name="White" />
             <geometry>
                 <cylinder radius="0.05" length="0.05" />
             </geometry>
         </visual>
 		<visual>
             <origin xyz="0 0.315 0"/>
-            <material name="Blue" />
+            <material name="Red" />
             <geometry>
                 <cylinder radius="0.05" length="0.05" />
             </geometry>
         </visual>
 		<visual>
             <origin xyz="0 -0.315 0"/>
-            <material name="Azure" />
+            <material name="White" />
             <geometry>
                 <cylinder radius="0.05" length="0.05" />
             </geometry>
