@@ -135,7 +135,7 @@ class QuadrotorController(LeafSystem):
             np.zeros(4) # output
         ))
         self.DeclareDiscreteState(initial_states)
-        self.DeclarePeriodicDiscreteUpdateEvent(period_sec=1e-2, offset_sec=1e-6, update=self.MyUpdate)
+        self.DeclarePeriodicDiscreteUpdateEvent(period_sec=1e-2, offset_sec=5e-3, update=self.MyUpdate)
         #self.DeclarePerStepDiscreteUpdateEvent(update=self.MyUpdate)
         
         # output = [f1, f2, f3, f4]
@@ -175,20 +175,21 @@ class QuadrotorController(LeafSystem):
         prev_time = prev_state[0]
         prev_omega_d = prev_state[1:4]
         prev_Rd = prev_state[4:13].reshape(3,3)
-
         dt = t - prev_time
 
-        ### desired trajectory - helical trajectory
-        # xd = np.array([0.4*t, 0.4*np.sin(np.pi*t), 0.6*np.cos(np.pi*t)])
-        # xd_dot = np.array([0.4, 0.4*np.pi*np.cos(np.pi*t), -0.6*np.pi*np.sin(np.pi*t)])
-        # xd_ddot = np.array([0.0, -0.4*np.pi**2*np.sin(np.pi*t), -0.6*np.pi**2*np.cos(np.pi*t)])
-        # b1d = np.array([np.cos(np.pi*t), np.sin(np.pi*t), 0])
-
-        ### desired trajectory - flip back over trajectory
-        xd = np.zeros(3)
-        xd_dot = np.zeros(3)
-        xd_ddot = np.zeros(3)
-        b1d = np.array([1,0,0])
+        if SIM_NUMBER == 1:
+            # Elliptical Helix Trajectory
+            xd = np.array([0.4*t, 0.4*np.sin(np.pi*t), 0.6*np.cos(np.pi*t)])
+            xd_dot = np.array([0.4, 0.4*np.pi*np.cos(np.pi*t), -0.6*np.pi*np.sin(np.pi*t)])
+            xd_ddot = np.array([0.0, -0.4*np.pi**2*np.sin(np.pi*t), -0.6*np.pi**2*np.cos(np.pi*t)])
+            #b1d = np.array([np.cos(np.pi*t), np.sin(np.pi*t), 0])
+            b1d = np.array([1,0,0])
+        elif SIM_NUMBER == 2:
+            # Flip back over trajectory
+            xd = np.zeros(3)
+            xd_dot = np.zeros(3)
+            xd_ddot = np.zeros(3)
+            b1d = np.array([1,0,0])
 
         # get the current of the quadrotor plant
         quadrotor_state = self.EvalVectorInput(context, 0).CopyToVector()
@@ -225,8 +226,7 @@ class QuadrotorController(LeafSystem):
         Rd = np.array([np.cross(b2d, b3d), b2d, b3d]).transpose()
 
         # estimate omega_d, omega_d_dot
-        if dt < 1e-9:
-            print(f'small dt. Current time = {t}')
+        if t < 5e-2:
             omega_d = np.zeros(3)
             omega_d_dot = np.zeros(3)
         else:
@@ -361,173 +361,180 @@ def main():
     quadrotor_model_context = quadrotor_model.GetMyContextFromRoot(root_context=root_context)
     plant_context = plant.GetMyContextFromRoot(root_context=root_context)
     
-
-    # initial conditions for plant - elliptical trajectory
-    # R = RotationMatrix()
-    
-    # initial conditions for plant - flip back over trajectory
-    R = RotationMatrix(np.array([
-        [1,0,0],
-        [0,-0.9995,-0.0314],
-        [0,0.0314,-0.9995]
-    ]))
-
-    q = R.ToQuaternion().wxyz()
-    plant_context.get_mutable_continuous_state_vector().SetFromVector(
-        [0,0,0,    # position
-        q[0], q[1], q[2], q[3],  # unit quaternion (rotation)
-        0,0,0,    # velocity
-        0,0,0,0]  # d/dt quaternion
-    )
+    if SIM_NUMBER == 1:
+        R = RotationMatrix()
+        q = R.ToQuaternion().wxyz()
+        plant_context.get_mutable_continuous_state_vector().SetFromVector(
+            [0,0,0,    # position
+            q[0], q[1], q[2], q[3],  # unit quaternion (rotation)
+            0,0,0,    # velocity
+            0,0,0,0]  # d/dt quaternion
+        )
+    elif SIM_NUMBER == 2:
+        R = RotationMatrix(np.array([
+            [1,0,0],
+            [0,-0.9995,-0.0314],
+            [0,0.0314,-0.9995]
+        ]))
+        q = R.ToQuaternion().wxyz()
+        plant_context.get_mutable_continuous_state_vector().SetFromVector(
+            [0,0,0,    # position
+            q[0], q[1], q[2], q[3],  # unit quaternion (rotation)
+            0,0,0,    # velocity
+            0,0,0,0]  # d/dt quaternion
+        )
     
     simulator = Simulator(diagram, root_context)
     simulator.Initialize()
     meshcat.StartRecording()
     #simulator.set_target_realtime_rate(1.0)
-    simulator.AdvanceTo(6.0)
-    #simulator.AdvanceTo(10.0)
+
+    if SIM_NUMBER == 1:
+        simulator.AdvanceTo(10.0)
+    elif SIM_NUMBER == 2:
+        simulator.AdvanceTo(6.0)
+    
     meshcat.StopRecording()
     meshcat.PublishRecording()
 
 
-    # --------------------------------------------------------- # 
-    # Case I: helical trajectory
-
     # plot the psi log data
-    # psi_log = psi_logger.FindLog(root_context)
-    # fig, axs = plt.subplots(1)
-    # fig.suptitle('Psi')
-    # t = psi_log.sample_times()
-    # data = psi_log.data()
-    # axs.plot(t, data[0,:])
-    # axs.set_ylabel('Attitude Error')
-    # plt.show()
+    if SIM_NUMBER == 1:
+        psi_log = psi_logger.FindLog(root_context)
+        fig, axs = plt.subplots(1)
+        fig.suptitle('Psi')
+        t = psi_log.sample_times()
+        data = psi_log.data()
+        axs.plot(t, data[0,:])
+        axs.set_ylabel('Attitude Error')
+        plt.show()
 
-    # # plot the position data
-    # position_log = position_logger.FindLog(root_context)
-    # fig, axs = plt.subplots(3)
-    # fig.suptitle('Position')
-    # t = position_log.sample_times()
-    # data = position_log.data()
-    # axs[0].plot(t, data[0,:])
-    # axs[0].set_ylabel('x')
-    # axs[0].set_ylim([0,4])
-    # axs[1].plot(t, data[1,:])
-    # axs[1].set_ylabel('y')
-    # axs[1].set_ylim([-0.5,0.5])
-    # axs[2].plot(t, data[2,:])
-    # axs[2].set_ylabel('z')
-    # axs[2].set_ylim([-1,1])
-    # plt.show()
+        # plot the position data
+        position_log = position_logger.FindLog(root_context)
+        fig, axs = plt.subplots(3)
+        fig.suptitle('Position')
+        t = position_log.sample_times()
+        data = position_log.data()
+        axs[0].plot(t, data[0,:])
+        axs[0].set_ylabel('x')
+        axs[0].set_ylim([0,4])
+        axs[1].plot(t, data[1,:])
+        axs[1].set_ylabel('y')
+        axs[1].set_ylim([-0.5,0.5])
+        axs[2].plot(t, data[2,:])
+        axs[2].set_ylabel('z')
+        axs[2].set_ylim([-1,1])
+        plt.show()
 
-    # # plot omega and omega_d
-    # omega_log = omega_logger.FindLog(root_context)
-    # fig, axs = plt.subplots(3)
-    # fig.suptitle('Omega')
-    # t = omega_log.sample_times()
-    # data = omega_log.data()
-    # axs[0].plot(t, data[0,:], t, data[3,:],'--')
-    # axs[0].set_ylim([-5,5])
-    # axs[0].legend(['omega', 'omega_d'])
-    # axs[1].plot(t, data[1,:], t, data[4,:],'--')
-    # axs[1].set_ylim([-5,5])
-    # axs[1].legend(['omega', 'omega_d'])
-    # axs[2].plot(t, data[2,:], t, data[5,:],'--')
-    # axs[2].set_ylim([0,10])
-    # axs[2].legend(['omega', 'omega_d'])
-    # plt.show()
+        # plot omega and omega_d
+        omega_log = omega_logger.FindLog(root_context)
+        fig, axs = plt.subplots(3)
+        fig.suptitle('Omega')
+        t = omega_log.sample_times()
+        data = omega_log.data()
+        axs[0].plot(t, data[0,:], t, data[3,:],'--')
+        axs[0].set_ylim([-5,5])
+        axs[0].legend(['omega', 'omega_d'])
+        axs[1].plot(t, data[1,:], t, data[4,:],'--')
+        axs[1].set_ylim([-5,5])
+        axs[1].legend(['omega', 'omega_d'])
+        axs[2].plot(t, data[2,:], t, data[5,:],'--')
+        axs[2].set_ylim([0,10])
+        axs[2].legend(['omega', 'omega_d'])
+        plt.show()
 
+        # plot the thrust inputs
+        thrust_log = thrust_logger.FindLog(root_context)
+        fig, axs = plt.subplots(4)
+        fig.suptitle('Thrust Inputs')
+        t = thrust_log.sample_times()
+        data = thrust_log.data()
+        axs[0].plot(t, data[0,:])
+        axs[0].set_ylim([-200,200])
+        axs[0].set_ylabel('f1')
+        axs[1].plot(t, data[1,:])
+        axs[1].set_ylabel('f2')
+        axs[1].set_ylim([-200,200])
+        axs[2].plot(t, data[2,:])
+        axs[2].set_ylabel('f3')
+        axs[2].set_ylim([-200,200])
+        axs[3].plot(t, data[3,:])
+        axs[3].set_ylabel('f4')
+        axs[3].set_ylim([-200,200])
+        plt.show()
 
-    # # plot the thrust inputs
-    # thrust_log = thrust_logger.FindLog(root_context)
-    # fig, axs = plt.subplots(4)
-    # fig.suptitle('Thrust Inputs')
-    # t = thrust_log.sample_times()
-    # data = thrust_log.data()
-    # axs[0].plot(t, data[0,:])
-    # axs[0].set_ylim([-200,200])
-    # axs[0].set_ylabel('f1')
-    # axs[1].plot(t, data[1,:])
-    # axs[1].set_ylabel('f2')
-    # axs[1].set_ylim([-200,200])
-    # axs[2].plot(t, data[2,:])
-    # axs[2].set_ylabel('f3')
-    # axs[2].set_ylim([-200,200])
-    # axs[3].plot(t, data[3,:])
-    # axs[3].set_ylabel('f4')
-    # axs[3].set_ylim([-200,200])
-    # plt.show()
+    elif SIM_NUMBER == 2:
+        # plot the psi log data
+        psi_log = psi_logger.FindLog(root_context)
+        fig, axs = plt.subplots(1)
+        fig.suptitle('Psi')
+        t = psi_log.sample_times()
+        data = psi_log.data()
+        axs.plot(t, data[0,:])
+        axs.set_ylabel('Attitude Error')
+        plt.show()
 
-    # --------------------------------------------------------- # 
-    # Case II: flip back over trajectory
+        # plot the position data
+        position_log = position_logger.FindLog(root_context)
+        fig, axs = plt.subplots(3)
+        fig.suptitle('Position')
+        t = position_log.sample_times()
+        data = position_log.data()
+        axs[0].plot(t, data[0,:])
+        axs[0].set_ylabel('x')
+        axs[0].set_ylim([-1,1])
+        axs[1].plot(t, data[1,:])
+        axs[1].set_ylabel('y')
+        axs[1].set_ylim([-1,1])
+        axs[2].plot(t, data[2,:])
+        axs[2].set_ylabel('z')
+        axs[2].set_ylim([-1,1])
+        plt.show()
 
-    # plot the psi log data
-    psi_log = psi_logger.FindLog(root_context)
-    fig, axs = plt.subplots(1)
-    fig.suptitle('Psi')
-    t = psi_log.sample_times()
-    data = psi_log.data()
-    axs.plot(t, data[0,:])
-    axs.set_ylabel('Attitude Error')
-    plt.show()
-
-    # plot the position data
-    position_log = position_logger.FindLog(root_context)
-    fig, axs = plt.subplots(3)
-    fig.suptitle('Position')
-    t = position_log.sample_times()
-    data = position_log.data()
-    axs[0].plot(t, data[0,:])
-    axs[0].set_ylabel('x')
-    axs[0].set_ylim([-1,1])
-    axs[1].plot(t, data[1,:])
-    axs[1].set_ylabel('y')
-    axs[1].set_ylim([-1,1])
-    axs[2].plot(t, data[2,:])
-    axs[2].set_ylabel('z')
-    axs[2].set_ylim([-1,1])
-    plt.show()
-
-    # plot omega and omega_d
-    omega_log = omega_logger.FindLog(root_context)
-    fig, axs = plt.subplots(3)
-    fig.suptitle('Omega')
-    t = omega_log.sample_times()
-    data = omega_log.data()
-    axs[0].plot(t, data[0,:], t, data[3,:],'--')
-    axs[0].set_ylim([-10,10])
-    axs[0].legend(['omega', 'omega_d'])
-    axs[1].plot(t, data[1,:], t, data[4,:],'--')
-    axs[1].set_ylim([-1,1])
-    axs[1].legend(['omega', 'omega_d'])
-    axs[2].plot(t, data[2,:], t, data[5,:],'--')
-    axs[2].set_ylim([-1,1])
-    axs[2].legend(['omega', 'omega_d'])
-    plt.show()
+        # plot omega and omega_d
+        omega_log = omega_logger.FindLog(root_context)
+        fig, axs = plt.subplots(3)
+        fig.suptitle('Omega')
+        t = omega_log.sample_times()
+        data = omega_log.data()
+        axs[0].plot(t, data[0,:], t, data[3,:],'--')
+        axs[0].set_ylim([-10,10])
+        axs[0].legend(['omega', 'omega_d'])
+        axs[1].plot(t, data[1,:], t, data[4,:],'--')
+        axs[1].set_ylim([-1,1])
+        axs[1].legend(['omega', 'omega_d'])
+        axs[2].plot(t, data[2,:], t, data[5,:],'--')
+        axs[2].set_ylim([-1,1])
+        axs[2].legend(['omega', 'omega_d'])
+        plt.show()
 
 
-    # plot the thrust inputs
-    thrust_log = thrust_logger.FindLog(root_context)
-    fig, axs = plt.subplots(4)
-    fig.suptitle('Thrust Inputs')
-    t = thrust_log.sample_times()
-    data = thrust_log.data()
-    axs[0].plot(t, data[0,:])
-    axs[0].set_ylim([-50,50])
-    axs[0].set_ylabel('f1')
-    axs[1].plot(t, data[1,:])
-    axs[1].set_ylabel('f2')
-    axs[1].set_ylim([-50,50])
-    axs[2].plot(t, data[2,:])
-    axs[2].set_ylabel('f3')
-    axs[2].set_ylim([-50,50])
-    axs[3].plot(t, data[3,:])
-    axs[3].set_ylabel('f4')
-    axs[3].set_ylim([-50,50])
-    plt.show()
+        # plot the thrust inputs
+        thrust_log = thrust_logger.FindLog(root_context)
+        fig, axs = plt.subplots(4)
+        fig.suptitle('Thrust Inputs')
+        t = thrust_log.sample_times()
+        data = thrust_log.data()
+        axs[0].plot(t, data[0,:])
+        axs[0].set_ylim([-50,50])
+        axs[0].set_ylabel('f1')
+        axs[1].plot(t, data[1,:])
+        axs[1].set_ylabel('f2')
+        axs[1].set_ylim([-50,50])
+        axs[2].plot(t, data[2,:])
+        axs[2].set_ylabel('f3')
+        axs[2].set_ylim([-50,50])
+        axs[3].plot(t, data[3,:])
+        axs[3].set_ylabel('f4')
+        axs[3].set_ylim([-50,50])
+        plt.show()
 
     while True:
         pass
 
 if __name__ == "__main__":
+    # Simulation Mode #
+    # 1 => Elliptic helix trajectory
+    # 2 => Flip back over trajectory
+    SIM_NUMBER = 1
     main()
