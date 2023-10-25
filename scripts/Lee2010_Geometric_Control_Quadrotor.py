@@ -1,16 +1,12 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from scipy.linalg import logm
 from pydrake.all import (
-    Context,
-    ContinuousState,
     DiagramBuilder,
     Simulator,
     Parser,
-    AddMultibodyPlantSceneGraph,
     MeshcatVisualizer,
     Meshcat,
-    JointIndex,
-    BodyIndex,
     LeafSystem,
     RotationMatrix,
     RigidTransform,
@@ -20,7 +16,7 @@ from pydrake.all import (
     FramePoseVector,
     SceneGraph,
     MultibodyPlant,
-    IllustrationProperties,
+    LogVectorOutput,
 )
 
 # helper functions
@@ -42,9 +38,8 @@ class Quadrotor(LeafSystem):
         LeafSystem.__init__(self)
         
         # input vector:
-        # u(0) = f = f_1 + f_2 + f_3 + f_4
-        # u(1:) = M = [M_1, M_2, M_3]
-        self.u_port = self.DeclareVectorInputPort("u_din", 4)
+        # u = [f1 f2 f3 f4]
+        self.u_port = self.DeclareVectorInputPort("u", 4)
 
         # state variables are as follows:
         # 0:2 - x,y,z (position)
@@ -59,6 +54,16 @@ class Quadrotor(LeafSystem):
         self.m = 4.34
         self.g = 9.81
 
+        # mapping thrusts to f, M
+        d = 0.315
+        c = 8.004e-4
+        self.T = np.array([
+            [1,1,1,1],
+            [0,-d,0,d],
+            [d,0,-d,0],
+            [-c,c,-c,c]
+        ])
+
         self.DeclareStateOutputPort("x", position_state_index)
         
     def DoCalcTimeDerivatives(self, context, derivatives):
@@ -66,12 +71,11 @@ class Quadrotor(LeafSystem):
         state = context.get_continuous_state_vector().CopyToVector()
 
         # extract f, M from the input port
-        u = self.EvalVectorInput(context, 0).CopyToVector()
+        u = self.T @ self.EvalVectorInput(context, 0).CopyToVector()
         f = u[0]
         M = u[1:]
         
         # unpack state variables
-        x = state[:3]   # positions
         q = state[3:7]  # quaternion (rotation)
         x_dot = state[7:10] # velocity
         q_dot = state[10:]  # d/dt quaternion
@@ -85,7 +89,6 @@ class Quadrotor(LeafSystem):
 
         # Accleration in Spatial Frame
         e3 = np.array([0,0,1])
-        # print(f)
         x_ddot = 1/self.m * (self.m*self.g * e3 - f * (R @ e3))
 
         # see table 5.18 in Quaternion.pdf
@@ -103,15 +106,12 @@ class Quadrotor(LeafSystem):
             [-q3, q2, -q1, q0]
         ])
 
-        # omega is in body frame
-        Omega = 2 * G @ q_dot
-
         # omega_dot is from the Euler equation in Chapter 4 of MLS
         # Jw_dot + w x Jw = M
-        Omega_dot = self.J_inv @ (np.cross(-Omega, self.J @ Omega) + M)
-
-        # q_dot = 1/2 G^T Omega, then take a derivative
-        q_ddot = 0.5 * (G_dot.transpose() @ Omega + G.transpose() @ Omega_dot)
+        # q_dot = 1/2 G^T omega, then take a derivative
+        omega = 2 * G @ q_dot
+        omega_dot = self.J_inv @ (np.cross(-omega, self.J @ omega) + M)
+        q_ddot = 0.5 * (G_dot.transpose() @ omega + G.transpose() @ omega_dot)
 
         derivatives.get_mutable_vector().SetFromVector(
             np.concatenate((x_dot, q_dot, x_ddot, q_ddot))
@@ -126,11 +126,20 @@ class QuadrotorController(LeafSystem):
         self.DeclareVectorInputPort("u", BasicVector(14))
 
         # get access to the previous values of the controller
-        self.DeclareDiscreteState(1+3+3+3+9) # time, Omega, Omega_d, Omega_d_dot, Rd
-        self.DeclarePeriodicDiscreteUpdateEvent(period_sec=0.001, offset_sec=0.0, update=self.MyUpdate)
+        initial_states = np.concatenate((
+            np.zeros(1), # time
+            np.zeros(3), # omega_d
+            np.eye(3).reshape(9), # Rd
+            np.zeros(4) # output
+        ))
+        self.DeclareDiscreteState(initial_states)
+        #self.DeclarePeriodicDiscreteUpdateEvent(period_sec=0.0001, offset_sec=0.00001, update=self.MyUpdate)
+        self.DeclarePerStepDiscreteUpdateEvent(update=self.MyUpdate)
         
-        # output = [f, M] where f is a scalar and M is a 3x1 vector
+        # output = [f1, f2, f3, f4]
         self.DeclareVectorOutputPort("y", BasicVector(4), self.CalcOutput)
+        self.DeclareVectorOutputPort("psi", BasicVector(1), self.OutputErrorFunction)
+        self.DeclareVectorOutputPort("omega", BasicVector(6), self.OutputOmegaFunction)
 
         # controller paramters
         self.m = 4.34           # mass of quadrotor
@@ -138,118 +147,153 @@ class QuadrotorController(LeafSystem):
         self.k_x = 16*self.m     # position gain
         self.k_v = 5.6*self.m    # velocity gain
         self.k_R = 8.81          # attitude gain
-        self.k_Omega = 2.54          # angular velocity gain
+        self.k_omega = 2.54          # angular velocity gain
         self.J = np.diag([0.0820, 0.0845, 0.1377])
         self.J_inv = np.linalg.inv(self.J)
 
-        # desired trajectory information
-        self.xd = np.array([0,0,0])
-        self.xd_dot = np.array([0,0,0])
-        self.xd_ddot = np.array([0,0,0])
-        self.b1d = np.array([0,0,0])
+        # mapping thrusts to f, M
+        d = 0.315
+        c = 8.004e-4
+        self.T = np.array([
+            [1,1,1,1],
+            [0,-d,0,d],
+            [d,0,-d,0],
+            [-c,c,-c,c]
+        ])
+        self.T_inv = np.linalg.inv(self.T)
 
-    def ComputeDesiredTrajectory(self, context):
-        # this function must be changed for a different target trajectory
-        t = context.get_time()
-        self.xd = np.array([0.4*t, 0.4*np.sin(np.pi*t), 0.6*np.cos(np.pi*t)])
-        self.xd_dot = np.array([0.4, 0.4*np.pi*np.cos(np.pi*t), -0.6*np.pi*np.sin(np.pi*t)])
-        self.xd_ddot = np.array([0.0, -0.4*np.pi**2*np.sin(np.pi*t), -0.6*np.pi**2*np.cos(np.pi*t)])
-        self.b1d = np.array([np.cos(np.pi*t), np.sin(np.pi*t), 0])
-
-    # update every time step
+    # update every 0.001 seconds
     def MyUpdate(self, context, discrete_state):
 
+        # desired trajectory
+        t = context.get_time()
+
+        # parse previous state
         prev_state = context.get_discrete_state().value()
         prev_time = prev_state[0]
-        prev_Omega = prev_state[1:4]
-        prev_Omega_d = prev_state[4:7]
-        prev_Omega_d_dot = prev_state[7:10]
-        prev_Rd = prev_state[10:].reshape(3,3)
+        prev_omega_d = prev_state[1:4]
+        prev_Rd = prev_state[4:13].reshape(3,3)
 
-        
-        # update time
-        next_state = discrete_state.get_mutable_value()
-        next_state[0] = 1.005*prev_time + 1
+        # check to make sure we have advanced the simulation
+        dt = t - prev_time
+        if dt < 1e-9:
+            print(f'Warning: dt too small. Current time: {t}')
+            return
+        # print(t)
+        # desired trajectory - helical trajectory
+        # xd = np.array([0.4*t, 0.4*np.sin(np.pi*t), 0.6*np.cos(np.pi*t)])
+        # xd_dot = np.array([0.4, 0.4*np.pi*np.cos(np.pi*t), -0.6*np.pi*np.sin(np.pi*t)])
+        # xd_ddot = np.array([0.0, -0.4*np.pi**2*np.sin(np.pi*t), -0.6*np.pi**2*np.cos(np.pi*t)])
+        # b1d = np.array([np.cos(np.pi*t), np.sin(np.pi*t), 0])
 
-        # print(prev_state)
-        
-        # next_time = 6
-        # discrete_state.set_value(6)
-
-        # get the most recent state of the controller
-        # prev_time = context.get_discrete_state()[0]
-
-        # next_time[0] = 1.005*prev_time+1
-        # # next_Omega[:] = 1.005*prev_Omega + np.ones(3)
-        
-        # print(next_time[0])
+        # desired trajectory - flip back over trajectory
+        xd = np.zeros(3)
+        xd_dot = np.zeros(3)
+        xd_ddot = np.zeros(3)
+        b1d = np.array([1,0,0])
 
         # get the current of the quadrotor plant
-        # quadrotor_state = self.EvalVectorInput(context, 0).CopyToVector()
-        # x = quadrotor_state[:3]   # positions
-        # q = quadrotor_state[3:7]  # quaternion (rotation)
-        # x_dot = quadrotor_state[7:10] # velocity
-        # q_dot = quadrotor_state[10:]  # d/dt quaternion
+        quadrotor_state = self.EvalVectorInput(context, 0).CopyToVector()
+        x = quadrotor_state[:3]   # positions
+        q = quadrotor_state[3:7]  # quaternion (rotation)
+        x_dot = quadrotor_state[7:10] # velocity
+        q_dot = quadrotor_state[10:]  # d/dt quaternion
+
+        try:
+            R = RotationMatrix(Quaternion(q)).matrix()
+        except:
+            q = q / np.linalg.norm(q)
+            R = RotationMatrix(Quaternion(q)).matrix()
 
         # q = q / np.linalg.norm(q)
-        # R = RotationMatrix(Quaternion(q)).matrix()
-
-        # # get angular velocity Omega from quaternion and its derivative
-        # q0,q1,q2,q3 = q
-        # G = np.array([
-        #     [-q1, q0, q3, -q2],
-        #     [-q2, -q3, q0, q1],
-        #     [-q3, q2, -q1, q0]
-        # ])
-        # Omega = 2 * G @ q_dot
-
-        # # get the desired trajectory
-        # self.ComputeDesiredTrajectory(context)
+        q0,q1,q2,q3 = q
+        G = np.array([
+            [-q1, q0, q3, -q2],
+            [-q2, -q3, q0, q1],
+            [-q3, q2, -q1, q0]
+        ])
+        omega = 2 * G @ q_dot
         
-        # # calculate b3d
-        # e_x = x - self.xd
-        # e_v = x_dot - self.xd_dot
+        # calculate total thrust
+        e_x = x - xd
+        e_v = x_dot - xd_dot
+        e3 = np.array([0,0,1])
+        tmp = -self.k_x*e_x - self.k_v*e_v - self.m*self.g*e3 + self.m*xd_ddot
+        total_thrust = np.dot(-tmp, R @ e3)
+        b3d = -tmp / np.linalg.norm(tmp)
 
-        # e3 = np.array([0,0,1])
-        # num = -self.k_x*e_x - self.k_v*e_v - self.m*self.g*e3 + self.m*self.xd_ddot
-        # b3d = -num / np.linalg.norm(num)
+        # calculate Rd
+        tmp = np.cross(b3d, b1d)
+        b2d = tmp / np.linalg.norm(tmp)
+        b1 = np.cross(b2d, b3d)
+        Rd = np.array([b1, b2d, b3d])
+        # print(Rd)
+        # confirmed that Rd is rotation matrix by ensuring det(Rd) = 1
+        # and the columns of Rd are linearly independent
 
-        # # calculate total thrust
-        # f = np.dot(-num, R @ e3)
-        # # print(f)
+        # estimate omega_d, omega_d_dot
+        omega_d_hat = 1/dt * logm(prev_Rd.transpose() @ Rd)
+        omega_d = VeeMap(omega_d_hat)
+        omega_d_dot = 1/dt * (omega_d - prev_omega_d)
 
-        # # calculate b2d
-        # num = np.cross(b3d, self.b1d)
-        # b2d = num / np.linalg.norm(num)
+        # compute error terms
+        e_R = 0.5*VeeMap(Rd.transpose() @ R - R.transpose() @ Rd)
+        e_omega = omega - R.transpose() @ Rd @ omega_d
 
-        # # calculate Rd
-        # b1 = np.cross(b2d, b3d)
-        # Rd = np.array([b1, b2d, b3d])
-
-        # # calculate Omega_d, Omega_d_dot
-        # Omega_d_hat = 1/dt * logm(self.Rd_prev.transpose() @ Rd)
-        # Omega_d = self.VeeMap(Omega_d_hat)
-        # Omega_d_dot = 1/dt * (Omega_d - self.Omega_d_prev)
-
-        # # compute error terms
-        # e_R = 0.5*self.VeeMap(Rd.transpose() @ R - R.transpose() @ Rd)
-        # e_Omega = Omega - R.transpose() @ Rd @ Omega_d
-
-        # # compute total moment
-        # M = -self.k_R*e_R - self.k_Omega*e_Omega + np.cross(Omega, self.J @ Omega) - \
-        #     self.J @ (self.HatMap(Omega) @ R.transpose() @ Rd @ Omega_d - R.transpose() @ Rd @ Omega_d_dot)
+        # PROBLEM: M is way to large at the beginning
+        # compute total moment
+        M = -self.k_R*e_R - self.k_omega*e_omega + np.cross(omega, self.J @ omega) - \
+            self.J @ (HatMap(omega) @ R.transpose() @ Rd @ omega_d - R.transpose() @ Rd @ omega_d_dot)
+        # print(M)
         
-        # # update previous values
-        # self.t_prev = t
-        # self.Omega_prev = Omega
-        # self.Omega_d_prev = Omega_d
-        # self.Rd_prev = Rd
+        # update previous values
+        next_state = discrete_state.get_mutable_value()
+        next_state[0] = t
+        next_state[1:4] = omega_d
+        next_state[4:13] = Rd.reshape(9)
+        next_state[13:] = np.array([total_thrust, M[0], M[1], M[2]]) # save the control output
 
+    # runs sparatically with no fixed dt
+    # use zero-order hold from state information
     def CalcOutput(self, context, output):
+        y = context.get_discrete_state().value()[13:]
+        output.set_value(self.T_inv @ y) # give thrust outputs
 
-        # output to plant
-        # output.set_value(np.array([f,M[0],M[1],M[2]]))
-        output.set_value(np.array([50,0,0,0]))
+    def OutputErrorFunction(self, context, output):
+        # get the rotation matrix of the quadrotor plant
+        quadrotor_state = self.EvalVectorInput(context, 0).CopyToVector()
+        q = quadrotor_state[3:7]
+        q = q / np.linalg.norm(q)
+        R = RotationMatrix(Quaternion(q)).matrix()
+
+        # parse previous state
+        prev_state = context.get_discrete_state().value()
+        prev_Rd = prev_state[4:13].reshape(3,3)
+
+        psi = 0.5*np.trace(np.eye(3) - prev_Rd.transpose() @ R)
+        output.set_value(np.array([psi]))
+
+    def OutputOmegaFunction(self, context, output):
+        # get the current of the quadrotor plant
+        quadrotor_state = self.EvalVectorInput(context, 0).CopyToVector()
+        q = quadrotor_state[3:7]  # quaternion (rotation)
+        q_dot = quadrotor_state[10:]  # d/dt quaternion
+
+        q = q / np.linalg.norm(q)
+        q0,q1,q2,q3 = q
+        G = np.array([
+            [-q1, q0, q3, -q2],
+            [-q2, -q3, q0, q1],
+            [-q3, q2, -q1, q0]
+        ])
+        omega = 2 * G @ q_dot
+
+        # parse previous state
+        prev_state = context.get_discrete_state().value()
+        prev_Omega_d = prev_state[1:4]
+
+        # output both vectors
+        output.set_value(np.concatenate((omega, prev_Omega_d)))
 
 class PoseSystem(LeafSystem):
     def __init__(self):
@@ -298,14 +342,21 @@ def main():
     builder.Connect(quadrotor_model.get_geometry_poses_output_port(), poser.GetInputPort("source_pose"))
     builder.Connect(poser.get_output_port(), scene_graph.get_source_pose_port(source_id))
 
-    builder.Connect(controller.get_output_port(), plant.get_input_port())
+    builder.Connect(controller.GetOutputPort("y"), plant.get_input_port())
     builder.Connect(plant.get_output_port(), poser.GetInputPort("quadrotor_state"))
     builder.Connect(plant.get_output_port(), controller.get_input_port())
+
+    # create loggers
+    psi_logger = LogVectorOutput(controller.GetOutputPort("psi"), builder)
+    position_logger = LogVectorOutput(plant.get_output_port(), builder)
+    omega_logger = LogVectorOutput(controller.GetOutputPort("omega"), builder)
+    thrust_logger = LogVectorOutput(controller.GetOutputPort("y"), builder)
 
     meshcat = Meshcat()
     MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
     diagram = builder.Build()
 
+    # fix quadrotor_model in place at the origin
     quadrotor_model.mutable_gravity_field().set_gravity_vector([0, 0, 0])
 
     # https://github.com/RobotLocomotion/drake/blob/67671ab0c97be45434a8b6f9609901f685c55462/doc/_pages/troubleshooting.md
@@ -314,8 +365,18 @@ def main():
     quadrotor_model_context = quadrotor_model.GetMyContextFromRoot(root_context=root_context)
     plant_context = plant.GetMyContextFromRoot(root_context=root_context)
     
-    # initial conditions for plant
-    R = RotationMatrix()
+
+    # initial conditions for plant - elliptical trajectory
+    # R = RotationMatrix()
+    
+    # initial conditions for plant - flip back over trajectory
+    # R = RotationMatrix(np.array([
+    #     [1,0,0],
+    #     [0,-0.9995,-0.0314],
+    #     [0,0.0314,-0.9995]
+    # ]))
+
+    R = RotationMatrix().MakeZRotation(np.pi/2).MakeXRotation(np.pi/4)
     q = R.ToQuaternion().wxyz()
     plant_context.get_mutable_continuous_state_vector().SetFromVector(
         [0,0,0,    # position
@@ -328,10 +389,148 @@ def main():
     simulator.Initialize()
 
     meshcat.StartRecording()
-    # simulator.set_target_realtime_rate(1.0)
-    simulator.AdvanceTo(1.0)
+    simulator.set_target_realtime_rate(1.0)
+    simulator.AdvanceTo(6.0)
+    #simulator.AdvanceTo(10.0)
     meshcat.StopRecording()
     meshcat.PublishRecording()
+
+
+    # --------------------------------------------------------- # 
+    # Case I: helical trajectory
+
+    # plot the psi log data
+    # psi_log = psi_logger.FindLog(root_context)
+    # fig, axs = plt.subplots(1)
+    # fig.suptitle('Psi')
+    # t = psi_log.sample_times()
+    # data = psi_log.data()
+    # axs.plot(t, data[0,:])
+    # axs.set_ylabel('Attitude Error')
+    # plt.show()
+
+    # # plot the position data
+    # position_log = position_logger.FindLog(root_context)
+    # fig, axs = plt.subplots(3)
+    # fig.suptitle('Position')
+    # t = position_log.sample_times()
+    # data = position_log.data()
+    # axs[0].plot(t, data[0,:])
+    # axs[0].set_ylabel('x')
+    # axs[0].set_ylim([0,4])
+    # axs[1].plot(t, data[1,:])
+    # axs[1].set_ylabel('y')
+    # axs[1].set_ylim([-0.5,0.5])
+    # axs[2].plot(t, data[2,:])
+    # axs[2].set_ylabel('z')
+    # axs[2].set_ylim([-1,1])
+    # plt.show()
+
+    # # plot omega and omega_d
+    # omega_log = omega_logger.FindLog(root_context)
+    # fig, axs = plt.subplots(3)
+    # fig.suptitle('Omega')
+    # t = omega_log.sample_times()
+    # data = omega_log.data()
+    # axs[0].plot(t, data[0,:], t, data[3,:],'--')
+    # axs[0].set_ylim([-5,5])
+    # axs[0].legend(['omega', 'omega_d'])
+    # axs[1].plot(t, data[1,:], t, data[4,:],'--')
+    # axs[1].set_ylim([-5,5])
+    # axs[1].legend(['omega', 'omega_d'])
+    # axs[2].plot(t, data[2,:], t, data[5,:],'--')
+    # axs[2].set_ylim([0,10])
+    # axs[2].legend(['omega', 'omega_d'])
+    # plt.show()
+
+
+    # # plot the thrust inputs
+    # thrust_log = thrust_logger.FindLog(root_context)
+    # fig, axs = plt.subplots(4)
+    # fig.suptitle('Thrust Inputs')
+    # t = thrust_log.sample_times()
+    # data = thrust_log.data()
+    # axs[0].plot(t, data[0,:])
+    # axs[0].set_ylim([-200,200])
+    # axs[0].set_ylabel('f1')
+    # axs[1].plot(t, data[1,:])
+    # axs[1].set_ylabel('f2')
+    # axs[1].set_ylim([-200,200])
+    # axs[2].plot(t, data[2,:])
+    # axs[2].set_ylabel('f3')
+    # axs[2].set_ylim([-200,200])
+    # axs[3].plot(t, data[3,:])
+    # axs[3].set_ylabel('f4')
+    # axs[3].set_ylim([-200,200])
+    # plt.show()
+
+    # --------------------------------------------------------- # 
+    # Case II: flip back over trajectory
+
+    # plot the psi log data
+    psi_log = psi_logger.FindLog(root_context)
+    fig, axs = plt.subplots(1)
+    fig.suptitle('Psi')
+    t = psi_log.sample_times()
+    data = psi_log.data()
+    axs.plot(t, data[0,:])
+    axs.set_ylabel('Attitude Error')
+    plt.show()
+
+    # plot the position data
+    position_log = position_logger.FindLog(root_context)
+    fig, axs = plt.subplots(3)
+    fig.suptitle('Position')
+    t = position_log.sample_times()
+    data = position_log.data()
+    axs[0].plot(t, data[0,:])
+    axs[0].set_ylabel('x')
+    axs[0].set_ylim([-1,1])
+    axs[1].plot(t, data[1,:])
+    axs[1].set_ylabel('y')
+    axs[1].set_ylim([-1,1])
+    axs[2].plot(t, data[2,:])
+    axs[2].set_ylabel('z')
+    axs[2].set_ylim([-1,1])
+    plt.show()
+
+    # plot omega and omega_d
+    omega_log = omega_logger.FindLog(root_context)
+    fig, axs = plt.subplots(3)
+    fig.suptitle('Omega')
+    t = omega_log.sample_times()
+    data = omega_log.data()
+    axs[0].plot(t, data[0,:], t, data[3,:],'--')
+    axs[0].set_ylim([-10,10])
+    axs[0].legend(['omega', 'omega_d'])
+    axs[1].plot(t, data[1,:], t, data[4,:],'--')
+    axs[1].set_ylim([-1,1])
+    axs[1].legend(['omega', 'omega_d'])
+    axs[2].plot(t, data[2,:], t, data[5,:],'--')
+    axs[2].set_ylim([-1,1])
+    axs[2].legend(['omega', 'omega_d'])
+    plt.show()
+
+
+    # plot the thrust inputs
+    thrust_log = thrust_logger.FindLog(root_context)
+    fig, axs = plt.subplots(4)
+    fig.suptitle('Thrust Inputs')
+    t = thrust_log.sample_times()
+    data = thrust_log.data()
+    axs[0].plot(t, data[0,:])
+    axs[0].set_ylim([-50,50])
+    axs[0].set_ylabel('f1')
+    axs[1].plot(t, data[1,:])
+    axs[1].set_ylabel('f2')
+    axs[1].set_ylim([-50,50])
+    axs[2].plot(t, data[2,:])
+    axs[2].set_ylabel('f3')
+    axs[2].set_ylim([-50,50])
+    axs[3].plot(t, data[3,:])
+    axs[3].set_ylabel('f4')
+    axs[3].set_ylim([-50,50])
+    plt.show()
 
     while True:
         pass
