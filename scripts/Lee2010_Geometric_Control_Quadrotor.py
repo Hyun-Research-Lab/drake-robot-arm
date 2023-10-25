@@ -87,7 +87,9 @@ class Quadrotor(LeafSystem):
             q = q / np.linalg.norm(q)
             R = RotationMatrix(Quaternion(q))
 
-        # Accleration in Spatial Frame
+        # Acceleration in Spatial Frame
+        # note that +z is down, so mg acts in the +z world direction
+        # and our force f acts in the -z body direction
         e3 = np.array([0,0,1])
         x_ddot = 1/self.m * (self.m*self.g * e3 - f * (R @ e3))
 
@@ -133,8 +135,8 @@ class QuadrotorController(LeafSystem):
             np.zeros(4) # output
         ))
         self.DeclareDiscreteState(initial_states)
-        #self.DeclarePeriodicDiscreteUpdateEvent(period_sec=0.0001, offset_sec=0.00001, update=self.MyUpdate)
-        self.DeclarePerStepDiscreteUpdateEvent(update=self.MyUpdate)
+        self.DeclarePeriodicDiscreteUpdateEvent(period_sec=1e-2, offset_sec=1e-6, update=self.MyUpdate)
+        #self.DeclarePerStepDiscreteUpdateEvent(update=self.MyUpdate)
         
         # output = [f1, f2, f3, f4]
         self.DeclareVectorOutputPort("y", BasicVector(4), self.CalcOutput)
@@ -174,19 +176,15 @@ class QuadrotorController(LeafSystem):
         prev_omega_d = prev_state[1:4]
         prev_Rd = prev_state[4:13].reshape(3,3)
 
-        # check to make sure we have advanced the simulation
         dt = t - prev_time
-        if dt < 1e-9:
-            print(f'Warning: dt too small. Current time: {t}')
-            return
-        # print(t)
-        # desired trajectory - helical trajectory
+
+        ### desired trajectory - helical trajectory
         # xd = np.array([0.4*t, 0.4*np.sin(np.pi*t), 0.6*np.cos(np.pi*t)])
         # xd_dot = np.array([0.4, 0.4*np.pi*np.cos(np.pi*t), -0.6*np.pi*np.sin(np.pi*t)])
         # xd_ddot = np.array([0.0, -0.4*np.pi**2*np.sin(np.pi*t), -0.6*np.pi**2*np.cos(np.pi*t)])
         # b1d = np.array([np.cos(np.pi*t), np.sin(np.pi*t), 0])
 
-        # desired trajectory - flip back over trajectory
+        ### desired trajectory - flip back over trajectory
         xd = np.zeros(3)
         xd_dot = np.zeros(3)
         xd_ddot = np.zeros(3)
@@ -217,28 +215,24 @@ class QuadrotorController(LeafSystem):
         # calculate total thrust
         e_x = x - xd
         e_v = x_dot - xd_dot
-
-        e_x = 0
-        e_v = 0
-
         e3 = np.array([0,0,1])
         tmp = -self.k_x*e_x - self.k_v*e_v - self.m*self.g*e3 + self.m*xd_ddot
         total_thrust = np.dot(-tmp, R @ e3)
         b3d = -tmp / np.linalg.norm(tmp)
 
         # calculate Rd
-        tmp = np.cross(b3d, b1d)
-        b2d = tmp / np.linalg.norm(tmp)
-        b1 = np.cross(b2d, b3d)
-        Rd = np.array([b1, b2d, b3d])
-        # print(Rd)
-        # confirmed that Rd is rotation matrix by ensuring det(Rd) = 1
-        # and the columns of Rd are linearly independent
+        b2d = np.cross(b3d, b1d) / np.linalg.norm( np.cross(b3d, b1d) )
+        Rd = np.array([np.cross(b2d, b3d), b2d, b3d]).transpose()
 
         # estimate omega_d, omega_d_dot
-        omega_d_hat = 1/dt * logm(prev_Rd.transpose() @ Rd)
-        omega_d = VeeMap(omega_d_hat)
-        omega_d_dot = 1/dt * (omega_d - prev_omega_d)
+        if dt < 1e-9:
+            print(f'small dt. Current time = {t}')
+            omega_d = np.zeros(3)
+            omega_d_dot = np.zeros(3)
+        else:
+            omega_d_hat = 1/dt * logm(prev_Rd.transpose() @ Rd)
+            omega_d = VeeMap(omega_d_hat)
+            omega_d_dot = 1/dt * (omega_d - prev_omega_d)
 
         # compute error terms
         e_R = 0.5*VeeMap(Rd.transpose() @ R - R.transpose() @ Rd)
@@ -248,9 +242,6 @@ class QuadrotorController(LeafSystem):
         M = -self.k_R*e_R - self.k_omega*e_omega + np.cross(omega, self.J @ omega) - \
             self.J @ (HatMap(omega) @ R.transpose() @ Rd @ omega_d - R.transpose() @ Rd @ omega_d_dot)
 
-        # Attitude Tracking works! The error goes to zero
-        # print(e_R,e_omega)
-        
         # update previous values
         next_state = discrete_state.get_mutable_value()
         next_state[0] = t
@@ -375,13 +366,12 @@ def main():
     # R = RotationMatrix()
     
     # initial conditions for plant - flip back over trajectory
-    # R = RotationMatrix(np.array([
-    #     [1,0,0],
-    #     [0,-0.9995,-0.0314],
-    #     [0,0.0314,-0.9995]
-    # ]))
+    R = RotationMatrix(np.array([
+        [1,0,0],
+        [0,-0.9995,-0.0314],
+        [0,0.0314,-0.9995]
+    ]))
 
-    R = RotationMatrix().MakeZRotation(np.pi/2)
     q = R.ToQuaternion().wxyz()
     plant_context.get_mutable_continuous_state_vector().SetFromVector(
         [0,0,0,    # position
@@ -392,7 +382,6 @@ def main():
     
     simulator = Simulator(diagram, root_context)
     simulator.Initialize()
-
     meshcat.StartRecording()
     #simulator.set_target_realtime_rate(1.0)
     simulator.AdvanceTo(6.0)
@@ -482,60 +471,60 @@ def main():
     axs.set_ylabel('Attitude Error')
     plt.show()
 
-    # # plot the position data
-    # position_log = position_logger.FindLog(root_context)
-    # fig, axs = plt.subplots(3)
-    # fig.suptitle('Position')
-    # t = position_log.sample_times()
-    # data = position_log.data()
-    # axs[0].plot(t, data[0,:])
-    # axs[0].set_ylabel('x')
-    # axs[0].set_ylim([-1,1])
-    # axs[1].plot(t, data[1,:])
-    # axs[1].set_ylabel('y')
-    # axs[1].set_ylim([-1,1])
-    # axs[2].plot(t, data[2,:])
-    # axs[2].set_ylabel('z')
-    # axs[2].set_ylim([-1,1])
-    # plt.show()
+    # plot the position data
+    position_log = position_logger.FindLog(root_context)
+    fig, axs = plt.subplots(3)
+    fig.suptitle('Position')
+    t = position_log.sample_times()
+    data = position_log.data()
+    axs[0].plot(t, data[0,:])
+    axs[0].set_ylabel('x')
+    axs[0].set_ylim([-1,1])
+    axs[1].plot(t, data[1,:])
+    axs[1].set_ylabel('y')
+    axs[1].set_ylim([-1,1])
+    axs[2].plot(t, data[2,:])
+    axs[2].set_ylabel('z')
+    axs[2].set_ylim([-1,1])
+    plt.show()
 
-    # # plot omega and omega_d
-    # omega_log = omega_logger.FindLog(root_context)
-    # fig, axs = plt.subplots(3)
-    # fig.suptitle('Omega')
-    # t = omega_log.sample_times()
-    # data = omega_log.data()
-    # axs[0].plot(t, data[0,:], t, data[3,:],'--')
-    # axs[0].set_ylim([-10,10])
-    # axs[0].legend(['omega', 'omega_d'])
-    # axs[1].plot(t, data[1,:], t, data[4,:],'--')
-    # axs[1].set_ylim([-1,1])
-    # axs[1].legend(['omega', 'omega_d'])
-    # axs[2].plot(t, data[2,:], t, data[5,:],'--')
-    # axs[2].set_ylim([-1,1])
-    # axs[2].legend(['omega', 'omega_d'])
-    # plt.show()
+    # plot omega and omega_d
+    omega_log = omega_logger.FindLog(root_context)
+    fig, axs = plt.subplots(3)
+    fig.suptitle('Omega')
+    t = omega_log.sample_times()
+    data = omega_log.data()
+    axs[0].plot(t, data[0,:], t, data[3,:],'--')
+    axs[0].set_ylim([-10,10])
+    axs[0].legend(['omega', 'omega_d'])
+    axs[1].plot(t, data[1,:], t, data[4,:],'--')
+    axs[1].set_ylim([-1,1])
+    axs[1].legend(['omega', 'omega_d'])
+    axs[2].plot(t, data[2,:], t, data[5,:],'--')
+    axs[2].set_ylim([-1,1])
+    axs[2].legend(['omega', 'omega_d'])
+    plt.show()
 
 
-    # # plot the thrust inputs
-    # thrust_log = thrust_logger.FindLog(root_context)
-    # fig, axs = plt.subplots(4)
-    # fig.suptitle('Thrust Inputs')
-    # t = thrust_log.sample_times()
-    # data = thrust_log.data()
-    # axs[0].plot(t, data[0,:])
-    # axs[0].set_ylim([-50,50])
-    # axs[0].set_ylabel('f1')
-    # axs[1].plot(t, data[1,:])
-    # axs[1].set_ylabel('f2')
-    # axs[1].set_ylim([-50,50])
-    # axs[2].plot(t, data[2,:])
-    # axs[2].set_ylabel('f3')
-    # axs[2].set_ylim([-50,50])
-    # axs[3].plot(t, data[3,:])
-    # axs[3].set_ylabel('f4')
-    # axs[3].set_ylim([-50,50])
-    # plt.show()
+    # plot the thrust inputs
+    thrust_log = thrust_logger.FindLog(root_context)
+    fig, axs = plt.subplots(4)
+    fig.suptitle('Thrust Inputs')
+    t = thrust_log.sample_times()
+    data = thrust_log.data()
+    axs[0].plot(t, data[0,:])
+    axs[0].set_ylim([-50,50])
+    axs[0].set_ylabel('f1')
+    axs[1].plot(t, data[1,:])
+    axs[1].set_ylabel('f2')
+    axs[1].set_ylim([-50,50])
+    axs[2].plot(t, data[2,:])
+    axs[2].set_ylabel('f3')
+    axs[2].set_ylim([-50,50])
+    axs[3].plot(t, data[3,:])
+    axs[3].set_ylabel('f4')
+    axs[3].set_ylim([-50,50])
+    plt.show()
 
     while True:
         pass
