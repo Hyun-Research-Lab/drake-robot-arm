@@ -204,5 +204,40 @@ def Flap():
     print("Done")
     while True:
         pass
+
+def Aerodynamics(plant):
+        #get body obj, https://drake.mit.edu/doxygen_cxx/classdrake_1_1multibody_1_1_body.html
+    left_wing_body = plant.GetBodyByName("LW_Pitch")
+    right_wing_body = plant.GetBodyByName("RW_Pitch")
+    
+        #get velocity at speicfic point of the body
+    # Get the body's spatial velocity at point Q, expressed in the world frame.
+    p_BQ = np.array([x, y, z])  # replace x, y, z with your specific coordinates
+    V_WBq = plant.EvalBodySpatialVelocityInWorld(plant_context, body, p_BQ)
+    #Get the linear velocity component at that point
+
+        # get the vector orthogonal to the body 
+
+    # Assuming 'plant' is your MultibodyPlant and 'context' is the current context.
+    # Also assuming you've obtained a reference to the wing blade body:
+
+    wing_blade = plant.GetBodyByName("wing_blade")
+
+    # Define a vector in the body frame of the wing blade that is orthogonal to it.
+    # For example, if the wing blade lies in the XY plane, this would be along the Z axis.
+    orthogonal_vector_body_frame = np.array([0, 0, 1])  # Z-axis in body frame
+
+    # Compute the pose of the wing blade in the world frame
+    X_WB = plant.EvalBodyPoseInWorld(plant_context, wing_blade)
+
+    # Transform the body-frame orthogonal vector to the world frame
+    orthogonal_vector_world_frame = X_WB.rotation().multiply(orthogonal_vector_body_frame)
+
+    #Dot product the velocity with the upvector, calculate the scalar with if else, get the force, apply the force
+
+    #attempt to throw forces in the wing frame so can always get vert force
+
+    #get velocity 
+
 Flap()
 
