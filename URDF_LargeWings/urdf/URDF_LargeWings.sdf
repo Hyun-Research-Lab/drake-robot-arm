@@ -229,6 +229,36 @@
                </geometry>
             </collision>
          </link>
+
+         <!-- <joint name="pole" type="prismatic">
+            <pose relative_to="base_link">0 0 0 0 0 0</pose>
+            <parent>world</parent>
+            <child>base_link</child>
+            <axis>
+               <xyz>0 1 0</xyz>
+               <limit>
+                  <lower>-1.79769e+308</lower>
+                  <upper>1.79769e+308</upper>
+               </limit>
+            </axis>
+         </joint> -->
+
+         <joint name="anchor" type="revolute"> 
+            <pose relative_to="base_link">0 0 0 0 0 0</pose>
+            <parent>world</parent>
+            <child>base_link</child>
+            <axis>
+               <xyz>0 0 1</xyz>
+               <limit>
+                  <lower>0</lower>
+                  <upper>0</upper>
+               </limit>        
+            </axis>
+         </joint>
+      
+
+
+
          <joint name="joint_RW_J_Pitch" type="revolute">
             <pose relative_to="RW_Flap">0.00899999999999999 0.004 0 0 0 0</pose>
             <!-- <pose relative_to="RW_Flap">0.00899999999999999 0.004 0 0.785398 0 0</pose> -->
@@ -318,33 +348,8 @@
          </joint>
 
          
-         <!-- <joint name="pole" type="prismatic">
-            <pose relative_to="base_link">0 0 0 0 0 0</pose>
-            <parent>world</parent>
-            <child>base_link</child>
-            <axis>
-               <xyz>0 1 0</xyz>
-               <limit>
-                  <lower>-1.79769e+308</lower>
-                  <upper>1.79769e+308</upper>
-               </limit>
-            </axis>
-         </joint> -->
-
-         <!-- <joint name="anchor" type="revolute"> 
-            <pose relative_to="base_link">0 0 0 0 0 0</pose>
-            <parent>world</parent>
-            <child>base_link</child>
-            <axis>
-               <xyz>0 0 1</xyz>
-               <limit>
-                  <lower>0</lower>
-                  <upper>0</upper>
-               </limit>        
-            </axis>
-         </joint> -->
       </model>
-      <gravity> 0 0 0 </gravity>
+      <!-- <gravity> 0 0 0 </gravity> -->
    </world>
 </sdf>
 <!--

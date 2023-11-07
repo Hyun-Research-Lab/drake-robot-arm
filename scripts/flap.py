@@ -51,6 +51,7 @@ from pydrake.all import (
     namedview,
     ConstantVectorSource,
     Multiplexer,
+    
     # RegisterGeometry
     
 )
@@ -68,13 +69,21 @@ from pydrake.geometry import GeometryInstance, MakePhongIllustrationProperties, 
 
 from pydrake.solvers import MathematicalProgram, Solve
 from libs.scenarios  import AddFloatingRpyJoint
+from libs.abstract_logger import AbstractValueLogger
 import os
 from pydrake.systems.framework import BasicVector
 
 from pydrake.multibody.tree import JointIndex, JointActuatorIndex, JointActuator
 
 meshcat = StartMeshcat()
-
+def process_externally_applied_spatial_force(value: ExternallyAppliedSpatialForce):
+    #only 1 force for now so 
+    value = value[0]
+    return {
+        'body_idx': value.body_index,
+        'position_vec': value.p_BoBq_B.tolist(),
+        'force_vec': value.F_Bq_W.get_coeffs().tolist()[3:], #[0:2] is torque, [3:] is force
+    }
 def MultiBodyParser(): #change proj dir and model from path/name
     builder = DiagramBuilder()
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=0.0)
@@ -161,6 +170,10 @@ def Flap():
     builder.Connect(aerodynamics.get_output_port(), plant.get_applied_spatial_force_input_port())
     builder.Connect(plant.get_body_poses_output_port(), aerodynamics.GetInputPort("body_poses"))
     builder.Connect(plant.get_body_spatial_velocities_output_port(), aerodynamics.GetInputPort("body_spatial_velocities"))
+    aero_logger = builder.AddSystem(AbstractValueLogger(model_value=[ExternallyAppliedSpatialForce()], publish_period_seconds=0.05 ))
+    builder.Connect(aerodynamics.get_output_port(), aero_logger.get_input_port())
+    # aero_logger = LogVectorOutput(aerodynamics.get_output_port(), builder)
+
     # Aerodynamics(plant, plant_context)
     # left_wing_body = plant.GetBodyByName("LW_Pitch")
     # X_WB = plant.EvalBodyPoseInWorld(plant_context, left_wing_body)
@@ -187,18 +200,22 @@ def Flap():
 
 
 
-    sine_wave = Sine(8.0, 7.0, 1.0, 1)
-    sine_wave2 = Sine(-8.0, 7.0, 1.0, 1)
+    sine_wave = Sine(2.0, 10.0, 1.0, 1)
+    sine_wave2 = Sine(-2.0, 10.0, 1.0, 1)
     sin = builder.AddSystem(sine_wave)
     sin2 = builder.AddSystem(sine_wave2)
     # builder.Connect(sine_wave.get_output_port(0), plant.get_actuation_input_port())
-    sinmux = builder.AddSystem(Multiplexer([1, 1]))
+    sinmux = builder.AddSystem(Multiplexer([1, 1])) #2 ports. each with vector size 1
     builder.Connect(sin.get_output_port(0), sinmux.get_input_port(1))
     builder.Connect(sin2.get_output_port(0), sinmux.get_input_port(0))
 
-    mux = builder.AddSystem(Multiplexer([2, 2]))
+    # mux = builder.AddSystem(Multiplexer([2, 2])) #2 ports , each with size 2
+    mux = builder.AddSystem(Multiplexer([3, 2])) # For pole
     builder.Connect(sinmux.get_output_port(0), mux.get_input_port(1))
-    passive_in = builder.AddSystem(ConstantVectorSource([0.0, 0.0]))
+
+    passive_in = builder.AddSystem(ConstantVectorSource([0.0, 0.0, 0.0])) #For pole
+    # passive_in = builder.AddSystem(ConstantVectorSource([0.0, 0.0]))
+   
     builder.Connect(passive_in.get_output_port(0), mux.get_input_port(0))
     builder.Connect(mux.get_output_port(0), plant.get_actuation_input_port())
     diagram = builder.Build()
@@ -252,16 +269,20 @@ def Flap():
     meshcat.StartRecording()
     simulator.Initialize()
     simulator.AdvanceTo(5)
-    print("Done")
+    print("Done calc")
     meshcat.PublishRecording()
-    print("Done")
+    print("Done record")
+    #save to csv
+    # aero_logger.FindLog(context) 
+    aero_logger.WriteCSV("aero_logger.csv", process_externally_applied_spatial_force)
+    print("Done Log")
     while True:
         pass
 
 def Aerodynamics(plant,context):
         #get body obj, https://drake.mit.edu/doxygen_cxx/classdrake_1_1multibody_1_1_body.html
     right_wing_body = plant.GetBodyByName("RW_Pitch")
-    
+
     # cylinder_pose_lw = RigidTransform(RotationMatrix(), [-0.06, -0.02, 0.05]) #z is facing leftright, y is up , x is in
     # cylinder_pose_rw = RigidTransform(RotationMatrix(), [0.06, -0.02, 0.05]) #z is facing leftright, y is up , x is in
 
@@ -353,5 +374,7 @@ class AerodynamicsSystem(LeafSystem):
         external_force.p_BoBq_B = center_pressure_body_rw
         external_force.F_Bq_W = SpatialForce([0,0,0], flap_drag_force) 
         output.set_value([external_force])
+
+
 Flap()
 
