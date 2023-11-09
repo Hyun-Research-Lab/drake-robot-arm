@@ -78,12 +78,20 @@ from pydrake.multibody.tree import JointIndex, JointActuatorIndex, JointActuator
 meshcat = StartMeshcat()
 def process_externally_applied_spatial_force(value: ExternallyAppliedSpatialForce):
     #only 1 force for now so 
-    value = value[0]
-    return {
-        'body_idx': value.body_index,
-        'position_vec': value.p_BoBq_B.tolist(),
-        'force_vec': value.F_Bq_W.get_coeffs().tolist()[3:], #[0:2] is torque, [3:] is force
+    spatial_force = value[0]
+    rw = {
+        'body_idx': spatial_force.body_index,
+        'position_vec': spatial_force.p_BoBq_B.tolist(),
+        'force_vec': spatial_force.F_Bq_W.get_coeffs().tolist()[3:], #[0:2] is torque, [3:] is force
     }
+    spatial_force = value[1]
+    lw = {
+        'body_idx': spatial_force.body_index,
+        'position_vec': spatial_force.p_BoBq_B.tolist(),
+        'force_vec': spatial_force.F_Bq_W.get_coeffs().tolist()[3:], #[0:2] is torque, [3:] is force
+    }
+    return [rw, lw]
+
 def MultiBodyParser(): #change proj dir and model from path/name
     builder = DiagramBuilder()
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=0.0)
@@ -99,18 +107,34 @@ def MultiBodyParser(): #change proj dir and model from path/name
     #     model_instance,
     #     use_ball_rpy=False,
     # )
-    plant.mutable_gravity_field().set_gravity_vector([0, 0, 0])
+    # plant.mutable_gravity_field().set_gravity_vector([0, 0, 0])
     
     left_wing_body = plant.GetBodyByName("LW_Pitch")
-    cylinder_pose_lw = RigidTransform(RotationMatrix(), [-0.06, -0.02, 0.05]) #z is facing, y is up , x is in
-    cylinder_pose_rw = RigidTransform(RotationMatrix(), [0.06, -0.02, 0.05]) #z is facing, y is up , x is in
-    cylinder_shape = Cylinder(0.001, 0.1)
+    # cylinder_pose_lw = RigidTransform(RotationMatrix(), [-0.06, -0.02, 0.05]) #z is facing, y is up , x is in
+    cylinder_pose_lw = RigidTransform(RotationMatrix(), [0.0, -0.0, 0.02]) #z is facing, y is up , x is in
+    cylinder_pose_rw = RigidTransform(RotationMatrix(), [0.0, -0.0, 0.02]) #z is facing, y is up , x is in
+    # cylinder_pose_rw = RigidTransform(RotationMatrix(), [-0.06, -0.02, 0.05]) #z is facing, y is up , x is in
+    cylinder_shape = Cylinder(0.001, 0.04)
     geometry_id_lw = plant.RegisterVisualGeometry(left_wing_body, cylinder_pose_lw, cylinder_shape, "wing_cylinder", [0, 1, 0, 0.5])
     
     right_wing_body = plant.GetBodyByName("RW_Pitch")
     geometry_id_rw = plant.RegisterVisualGeometry(right_wing_body, cylinder_pose_rw, cylinder_shape, "wing_cylinder", [0, 1, 0, 0.5])
-    plant.Finalize()
 
+    #can visually verify that the cylinder is in the right place (cp)
+    center_pressure_body_lw = [[-0.00833, -0.025, 0], [-0.02499, -0.025, 0], [-0.04165, -0.025, 0], [-0.05831, -0.025, 0], [-0.07497, -0.025, 0], [-0.09163, -0.025, 0], [-0.10829, -0.025, 0], [-0.12495, -0.025, 0], [-0.14161, -0.025, 0]]
+    center_pressure_body_rw = [[0.00833, -0.025, 0], [0.02499, -0.025, 0], [0.04165, -0.025, 0], [0.05831, -0.025, 0], [0.07497, -0.025, 0], [0.09163, -0.025, 0], [0.10829, -0.025, 0], [0.12495, -0.025, 0], [0.14161, -0.025, 0]]
+
+
+    for i,cp in enumerate(center_pressure_body_lw):
+        cp[2] = 0.02
+        cylinder_pose_lw = RigidTransform(RotationMatrix(), cp)
+        geometry_id_lw = plant.RegisterVisualGeometry(left_wing_body, cylinder_pose_lw, cylinder_shape, "wing_cylinder" + str(i), [0, 1, 1, 0.5])
+    for i,cp in enumerate(center_pressure_body_rw):
+        cp[2] = 0.02
+
+        cylinder_pose_lw = RigidTransform(RotationMatrix(), cp)
+        geometry_id_lw = plant.RegisterVisualGeometry(right_wing_body, cylinder_pose_lw, cylinder_shape, "wing_cylinder" + str(i), [0, 1, 1, 0.5])
+    plant.Finalize()
     #Info check
     print(f"Number of bodies: {plant.num_bodies()}")
     print(f"Number of joints: {plant.num_joints()}")
@@ -198,10 +222,10 @@ def Flap():
 
 
 
+    #passive joint effort in limit in sdf set to 0 to make passive
 
-
-    sine_wave = Sine(2.0, 10.0, 1.0, 1)
-    sine_wave2 = Sine(-2.0, 10.0, 1.0, 1)
+    sine_wave = Sine(2.758, 50.0, 1.0, 1)
+    sine_wave2 = Sine(-2.758, 50.0, 1.0, 1)
     sin = builder.AddSystem(sine_wave)
     sin2 = builder.AddSystem(sine_wave2)
     # builder.Connect(sine_wave.get_output_port(0), plant.get_actuation_input_port())
@@ -210,14 +234,15 @@ def Flap():
     builder.Connect(sin2.get_output_port(0), sinmux.get_input_port(0))
 
     # mux = builder.AddSystem(Multiplexer([2, 2])) #2 ports , each with size 2
-    mux = builder.AddSystem(Multiplexer([3, 2])) # For pole
-    builder.Connect(sinmux.get_output_port(0), mux.get_input_port(1))
+    # mux = builder.AddSystem(Multiplexer([3, 2])) # For pole
+    # builder.Connect(sinmux.get_output_port(0), mux.get_input_port(1))
 
-    passive_in = builder.AddSystem(ConstantVectorSource([0.0, 0.0, 0.0])) #For pole
+    # passive_in = builder.AddSystem(ConstantVectorSource([0.0, 0.0, 0.0])) #For pole
     # passive_in = builder.AddSystem(ConstantVectorSource([0.0, 0.0]))
    
-    builder.Connect(passive_in.get_output_port(0), mux.get_input_port(0))
-    builder.Connect(mux.get_output_port(0), plant.get_actuation_input_port())
+    # builder.Connect(passive_in.get_output_port(0), mux.get_input_port(0))
+    # builder.Connect(mux.get_output_port(0), plant.get_actuation_input_port())
+    builder.Connect(sinmux.get_output_port(0), plant.get_actuation_input_port())
     diagram = builder.Build()
 
     state_names = plant.GetStateNames(False)
@@ -268,7 +293,8 @@ def Flap():
     context = simulator.get_mutable_context()
     meshcat.StartRecording()
     simulator.Initialize()
-    simulator.AdvanceTo(5)
+    print("init")
+    simulator.AdvanceTo(2)
     print("Done calc")
     meshcat.PublishRecording()
     print("Done record")
@@ -280,46 +306,47 @@ def Flap():
         pass
 
 def Aerodynamics(plant,context):
-        #get body obj, https://drake.mit.edu/doxygen_cxx/classdrake_1_1multibody_1_1_body.html
-    right_wing_body = plant.GetBodyByName("RW_Pitch")
+    pass
+    #     #get body obj, https://drake.mit.edu/doxygen_cxx/classdrake_1_1multibody_1_1_body.html
+    # right_wing_body = plant.GetBodyByName("RW_Pitch")
+    # left_wing_body = plant.GetBodyByName("LW_Pitch")
+    # # cylinder_pose_lw = RigidTransform(RotationMatrix(), [-0.06, -0.02, 0.05]) #z is facing leftright, y is up , x is in
+    # # cylinder_pose_rw = RigidTransform(RotationMatrix(), [0.06, -0.02, 0.05]) #z is facing leftright, y is up , x is in
 
-    # cylinder_pose_lw = RigidTransform(RotationMatrix(), [-0.06, -0.02, 0.05]) #z is facing leftright, y is up , x is in
-    # cylinder_pose_rw = RigidTransform(RotationMatrix(), [0.06, -0.02, 0.05]) #z is facing leftright, y is up , x is in
+    # # body_points = 
+    #     #get velocity at speicfic point of the body
+    # # Get the body's spatial velocity at point Q, expressed in the world frame.
+    # velocity_world_rw = plant.EvalBodySpatialVelocityInWorld(context, right_wing_body) #velocity of origin of body
+    # center_pressure_body_rw = np.array([-0.06, -0.02, 0])  # relative location on wing for cp from origin
+    # wing_rotational_v = np.cross(velocity_world_rw.rotational(), center_pressure_body_rw) #additional velocity at cp from origin
 
-    # body_points = 
-        #get velocity at speicfic point of the body
-    # Get the body's spatial velocity at point Q, expressed in the world frame.
-    velocity_world_rw = plant.EvalBodySpatialVelocityInWorld(context, right_wing_body) #velocity of origin of body
-    center_pressure_body_rw = np.array([-0.06, -0.02, 0])  # relative location on wing for cp from origin
-    wing_rotational_v = np.cross(velocity_world_rw.rotational(), center_pressure_body_rw) #additional velocity at cp from origin
-
-    wing_cp_linear_v = velocity_world_rw.translational() + wing_rotational_v #total lin velocity at cp
+    # wing_cp_linear_v = velocity_world_rw.translational() + wing_rotational_v #total lin velocity at cp
     
 
-    orthogonal_vec_rw = np.array([0,0,1])
-    pose_world_rw = plant.EvalBodyPoseInWorld(context, right_wing_body)
-    #rigidbody.rotationmatrix, multiply by orth
-    up_vector = pose_world_rw.rotation().multiply(orthogonal_vec_rw) #orthogonal unit vector in world frame
+    # orthogonal_vec_rw = np.array([0,0,1])
+    # pose_world_rw = plant.EvalBodyPoseInWorld(context, right_wing_body)
+    # #rigidbody.rotationmatrix, multiply by orth
+    # up_vector = pose_world_rw.rotation().multiply(orthogonal_vec_rw) #orthogonal unit vector in world frame
 
-    #projected linear vel onto up vec
-    vel_dot_up = np.dot(wing_cp_linear_v, up_vector) 
-    #1.293 is air density, 0.00765 is wing area, 1.28 drag coef
-    wing_area = 0.00765
-    air_density = 1.293
-    drag_coef = 1.28
-    flap_drag_scalar = 0.5 * air_density * wing_area * drag_coef * vel_dot_up**2 #drag force scalar
-    blade_area_list = [0.00085,0.00085,0.00085,0.00085,0.00085,0.00085,0.00085,0.00085,0.00085]
-    print("blade area list: ", sum(blade_area_list))
-    print("flap drag scalar: ", flap_drag_scalar)
-    flap_drag_force = flap_drag_scalar * up_vector
-    if vel_dot_up < 0:
-        flap_drag_force = -flap_drag_force
-    print("flap drag force: ", flap_drag_force)
+    # #projected linear vel onto up vec
+    # vel_dot_up = np.dot(wing_cp_linear_v, up_vector) 
+    # #1.293 is air density, 0.00765 is wing area, 1.28 drag coef
+    # wing_area = 0.00765
+    # air_density = 1.293
+    # drag_coef = 1.28
+    # flap_drag_scalar = 0.5 * air_density * wing_area * drag_coef * vel_dot_up**2 #drag force scalar
+    # blade_area_list = [0.00085,0.00085,0.00085,0.00085,0.00085,0.00085,0.00085,0.00085,0.00085]
+    # print("blade area list: ", sum(blade_area_list))
+    # print("flap drag scalar: ", flap_drag_scalar)
+    # flap_drag_force = flap_drag_scalar * up_vector
+    # if vel_dot_up < 0:
+    #     flap_drag_force = -flap_drag_force
+    # print("flap drag force: ", flap_drag_force)
     
-    external_force = ExternallyAppliedSpatialForce()
-    external_force.body_index = right_wing_body.index()
-    external_force.p_BoBq_B = center_pressure_body_rw
-    external_force.F_Bq_W = flap_drag_force
+    # external_force = ExternallyAppliedSpatialForce()
+    # external_force.body_index = right_wing_body.index()
+    # external_force.p_BoBq_B = center_pressure_body_rw
+    # external_force.F_Bq_W = flap_drag_force
 
 class AerodynamicsSystem(LeafSystem):
     def __init__(self, plant):
@@ -338,42 +365,69 @@ class AerodynamicsSystem(LeafSystem):
         # self.plant.SetPositionsAndVelocities(plant_context, state)
 
         right_wing_body = self.plant.GetBodyByName("RW_Pitch")
+        left_wing_body = self.plant.GetBodyByName("LW_Pitch")
+
         #vel of rw
         
         velocity_world_rw = velocities[right_wing_body.index()] 
-        # velocity_world_rw = self.plant.EvalBodySpatialVelocityInWorld(context, right_wing_body) #velocity of origin of body
-        center_pressure_body_rw = np.array([-0.06, -0.02, 0])  # relative location on wing for cp from origin
-        wing_rotational_v = np.cross(velocity_world_rw.rotational(), center_pressure_body_rw) #additional velocity at cp from origin
-
-        wing_cp_linear_v = velocity_world_rw.translational() + wing_rotational_v #total lin velocity at cp
+        velocity_world_lw = velocities[left_wing_body.index()]
         
-
+        #We take the orthogonal vector to the wing and then project the linear velocity onto it to get the velocity component for drag
         orthogonal_vec_rw = np.array([0,0,1])
         pose_world_rw = poses[right_wing_body.index()]
-        # pose_world_rw = self.plant.EvalBodyPoseInWorld(context, right_wing_body)
+        pose_world_lw = poses[left_wing_body.index()]
         # rigidbody.rotationmatrix, multiply by orth
-        up_vector = pose_world_rw.rotation().multiply(orthogonal_vec_rw) #orthogonal unit vector in world frame
 
-        # #projected linear vel onto up vec
-        vel_dot_up = np.dot(wing_cp_linear_v, up_vector) 
-        #1.293 is air density, 0.00765 is wing area, 1.28 drag coef
-        wing_area = 0.00765
-        air_density = 1.293
-        drag_coef = 1.28
-        flap_drag_scalar = 0.5 * air_density * wing_area * drag_coef * vel_dot_up**2 #drag force scalar
-        blade_area_list = [0.00085,0.00085,0.00085,0.00085,0.00085,0.00085,0.00085,0.00085,0.00085]
-        # print("blade area list: ", sum(blade_area_list))
-        # print("flap drag scalar: ", flap_drag_scalar)
-        flap_drag_force = flap_drag_scalar * up_vector
-        if vel_dot_up < 0:
-            flap_drag_force = -flap_drag_force
-        # print("flap drag force: ", flap_drag_force)
+        up_vector_rw = pose_world_rw.rotation().multiply(orthogonal_vec_rw) #orthogonal unit vector in world frame
+        up_vector_lw = pose_world_lw.rotation().multiply(orthogonal_vec_rw) #orthogonal unit vector in world frame
 
-        external_force = ExternallyAppliedSpatialForce()
-        external_force.body_index = right_wing_body.index()
-        external_force.p_BoBq_B = center_pressure_body_rw
-        external_force.F_Bq_W = SpatialForce([0,0,0], flap_drag_force) 
-        output.set_value([external_force])
+        blade_area = 0.00765
+        # blade_area_list = [0.00085,0.00085,0.00085,0.00085,0.00085,0.00085,0.00085,0.00085,0.00085]
+        center_pressure_body_lw = [[-0.00833, -0.025, 0], [-0.02499, -0.025, 0], [-0.04165, -0.025, 0], [-0.05831, -0.025, 0], [-0.07497, -0.025, 0], [-0.09163, -0.025, 0], [-0.10829, -0.025, 0], [-0.12495, -0.025, 0], [-0.14161, -0.025, 0]]
+        center_pressure_body_rw = [[0.00833, -0.025, 0], [0.02499, -0.025, 0], [0.04165, -0.025, 0], [0.05831, -0.025, 0], [0.07497, -0.025, 0], [0.09163, -0.025, 0], [0.10829, -0.025, 0], [0.12495, -0.025, 0], [0.14161, -0.025, 0]]
+
+        # center_pressure_body_rw = [[0.06, -0.02, 0]]  # relative location on wing for cp from origin
+        blade_area_list_rw = [blade_area / len(center_pressure_body_rw)] * len(center_pressure_body_rw)
+
+        # center_pressure_body_lw = [[-0.06, -0.02, 0]]  # relative location on wing for cp from origin
+        # center_pressure_body_lw = [[-0.060, -0.025, 0], [-0.045, -0.025, 0], [-0.030, -0.025, 0], [-0.015, -0.025, 0], [0.000, -0.025, 0], [0.015, -0.025, 0], [0.030, -0.025, 0], [0.045, -0.025, 0], [0.060, -0.025, 0] ]
+        blade_area_list_lw = [blade_area / len(center_pressure_body_lw)] * len(center_pressure_body_lw)
+        
+        rw_info = (right_wing_body, center_pressure_body_rw, blade_area_list_rw, velocity_world_rw, up_vector_rw)
+        lw_info = (left_wing_body, center_pressure_body_lw, blade_area_list_lw, velocity_world_lw, up_vector_lw)
+
+        external_force_list = []
+        for body_info in [rw_info, lw_info]:
+            body = body_info[0]
+            center_pressure_body = body_info[1]
+            blade_area_list = body_info[2]
+            velocity_world = body_info[3]
+            up_vector = body_info[4]
+            for i, cp_coord in enumerate(center_pressure_body):
+                #we take center pressure, get linear velocity and rotational velocity at wing origin, then map rotational to linear from origin to
+                # center pressure, then add the two linear velocities together to get total linear velocity at center pressure
+                wing_rotational_v_mapped = np.cross(velocity_world.rotational(), cp_coord) #additional velocity at cp from origin
+                wing_cp_linear_v = velocity_world.translational() + wing_rotational_v_mapped #total lin velocity at cp
+                vel_dot_up = np.dot(wing_cp_linear_v, up_vector) #projected linear vel onto up vec
+
+                #1.293 is air density, 0.00765 is wing area, 1.28 drag coef
+                # wing_area = 0.00765
+                air_density = 1.293
+                drag_coef = 1.28
+                flap_drag_scalar = 0.5 * air_density * blade_area_list[i] * drag_coef * vel_dot_up**2 #drag force scalar
+                flap_drag_force = flap_drag_scalar * up_vector
+                if vel_dot_up < 0:  #fixes direction
+                    flap_drag_force = -flap_drag_force
+                # print("blade area list: ", sum(blade_area_list))
+                # print("flap drag scalar: ", flap_drag_scalar)
+                # print("flap drag force: ", flap_drag_force)
+
+                external_force = ExternallyAppliedSpatialForce()
+                external_force.body_index = body.index()
+                external_force.p_BoBq_B = cp_coord
+                external_force.F_Bq_W = SpatialForce([0,0,0], flap_drag_force) 
+                external_force_list.append(external_force)
+        output.set_value(external_force_list)
 
 
 Flap()

@@ -21,13 +21,23 @@ class AbstractValueLogger(LeafSystem):
         with open(file_name, 'w') as f:
             writer = None
             if process_function is not None:
-                for v in self.values:
+                for i,v in enumerate(self.values):
                     processed_value = process_function(v)
-                    if writer is None:
-                        fieldnames = ['time'] + list(processed_value.keys())
-                        writer = csv.DictWriter(f, fieldnames=fieldnames)
-                        writer.writeheader()
-                    writer.writerow(processed_value)
+                    if type(processed_value) is list:
+                        for d in processed_value:
+                            if writer is None:
+                                fieldnames = ['time'] + list(d.keys())
+                                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                                writer.writeheader()
+                            d['time'] = self.sample_times[i]
+                            writer.writerow(d)
+                    else:
+                        if writer is None:
+                            fieldnames = ['time'] + list(processed_value.keys())
+                            writer = csv.DictWriter(f, fieldnames=fieldnames)
+                            writer.writeheader()
+                        processed_value['time'] = self.sample_times[i]
+                        writer.writerow(processed_value)
             else:
                 for i in range(len(self.sample_times)):
                     f.write(str(self.sample_times[i]) + ',')
@@ -46,4 +56,6 @@ class AbstractValueLogger(LeafSystem):
             'F_Bq_W': value.F_Bq_W.tolist() if hasattr(value, 'F_Bq_W') else "N/A",
             'tau_BoBq_W': value.tau_BoBq_W.tolist() if hasattr(value, 'tau_BoBq_W') else "N/A",
         }
+
+    If multiple bodies (so multiple dictionaries per function call, can just store as list [{}, {}])
     '''

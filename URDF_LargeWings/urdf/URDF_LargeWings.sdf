@@ -230,31 +230,33 @@
             </collision>
          </link>
 
-         <!-- <joint name="pole" type="prismatic">
+         <joint name="pole" type="prismatic">
             <pose relative_to="base_link">0 0 0 0 0 0</pose>
             <parent>world</parent>
             <child>base_link</child>
             <axis>
                <xyz>0 1 0</xyz>
                <limit>
+                  <effort>0</effort>
                   <lower>-1.79769e+308</lower>
                   <upper>1.79769e+308</upper>
                </limit>
             </axis>
-         </joint> -->
+         </joint>
 
-         <joint name="anchor" type="revolute"> 
+         <!-- <joint name="anchor" type="revolute"> 
             <pose relative_to="base_link">0 0 0 0 0 0</pose>
             <parent>world</parent>
             <child>base_link</child>
             <axis>
                <xyz>0 0 1</xyz>
                <limit>
+                  <effort>0</effort>
                   <lower>0</lower>
                   <upper>0</upper>
                </limit>        
             </axis>
-         </joint>
+         </joint> -->
       
 
 
@@ -308,6 +310,8 @@
                </limit>
             </axis>
          </joint>
+
+         <!-- passive-->
          <joint name="joint_LW_J_Flap" type="revolute">
             <pose relative_to="base_link">-0.00666143782776616 0 0 0 0 0</pose>
             <parent>base_link</parent>
@@ -322,6 +326,7 @@
                   <spring_stiffness>5</spring_stiffness>
                </dynamics>
                <limit>
+                  <effort>0</effort>
                   <lower>-1.79769e+308</lower>
                   <upper>1.79769e+308</upper>
                </limit>
@@ -341,6 +346,7 @@
                   <spring_stiffness>5</spring_stiffness>
                </dynamics>
                <limit>
+                  <effort>0</effort> 
                   <lower>-1.79769e+308</lower>
                   <upper>1.79769e+308</upper>
                </limit>
