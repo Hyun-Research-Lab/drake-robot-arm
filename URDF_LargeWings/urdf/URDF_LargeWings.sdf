@@ -2,7 +2,7 @@
 <sdf version="1.8">
    <world name="world2">
       <physics name="1ms" type="ignored">
-         <max_step_size>0.0001</max_step_size>
+         <max_step_size>0.001</max_step_size>
          <real_time_factor> 1</real_time_factor>
       </physics>
       <plugin filename="libignition-gazebo-physics-system.so" name="ignition::gazebo::systems::Physics">
@@ -230,7 +230,7 @@
             </collision>
          </link>
 
-         <joint name="pole" type="prismatic">
+         <!-- <joint name="pole" type="prismatic">
             <pose relative_to="base_link">0 0 0 0 0 0</pose>
             <parent>world</parent>
             <child>base_link</child>
@@ -242,9 +242,9 @@
                   <upper>1.79769e+308</upper>
                </limit>
             </axis>
-         </joint>
+         </joint> -->
 
-         <!-- <joint name="anchor" type="revolute"> 
+         <joint name="anchor" type="revolute"> 
             <pose relative_to="base_link">0 0 0 0 0 0</pose>
             <parent>world</parent>
             <child>base_link</child>
@@ -256,7 +256,7 @@
                   <upper>0</upper>
                </limit>        
             </axis>
-         </joint> -->
+         </joint>
       
 
 
@@ -269,8 +269,8 @@
             <axis>
                <xyz>-1 0 0</xyz>
                <dynamics>
-                  <damping>.0004</damping>
-                  <spring_stiffness>.18</spring_stiffness>
+                  <damping>.00005</damping>
+                  <spring_stiffness>.0003</spring_stiffness>
                   <!-- <friction>1</friction>    -->
                   <!-- <spring_reference>1.5708</spring_reference> -->
                   <!-- <spring_reference>1</spring_reference> -->
@@ -278,6 +278,7 @@
                   <!-- <spring_stiffness>10000</spring_stiffness> -->
                </dynamics>
                <limit>
+               <effort>0</effort>
                   <lower>-1.79769e+308</lower>
                   <upper>1.79769e+308</upper>
                   <!-- <lower>0</lower>
@@ -285,6 +286,7 @@
                </limit>
             </axis>
          </joint>
+         <!-- flapping pitch joint  -->
          <joint name="joint_LW_J_Pitch" type="revolute">
             <pose relative_to="LW_Flap">-0.00899999999999999 0.004 0 0 0 0</pose>
             <!-- <pose relative_to="LW_Flap">-0.00899999999999999 0.004 0 0.785398 0 0</pose> -->
@@ -293,8 +295,8 @@
             <axis>
                <xyz>1 0 0</xyz>
                <dynamics>
-                  <damping>.0004</damping>
-                  <spring_stiffness>.18</spring_stiffness>
+                  <damping>.00005</damping>
+                  <spring_stiffness>.0003</spring_stiffness>
                   <!-- <friction>1</friction>    -->
                   <!-- <spring_reference>1.5708</spring_reference> -->
                   <!-- <spring_reference>0.785398</spring_reference> -->
@@ -303,6 +305,7 @@
 
                </dynamics>
                <limit>
+               <effort>0</effort>
                   <lower>-1.79769e+308</lower>
                   <upper>1.79769e+308</upper>
                   <!-- <lower>0</lower>
@@ -326,7 +329,7 @@
                   <spring_stiffness>5</spring_stiffness>
                </dynamics>
                <limit>
-                  <effort>0</effort>
+                  <!-- <effort>0</effort> -->
                   <lower>-1.79769e+308</lower>
                   <upper>1.79769e+308</upper>
                </limit>
@@ -346,7 +349,7 @@
                   <spring_stiffness>5</spring_stiffness>
                </dynamics>
                <limit>
-                  <effort>0</effort> 
+                  <!-- <effort>0</effort>  -->
                   <lower>-1.79769e+308</lower>
                   <upper>1.79769e+308</upper>
                </limit>
