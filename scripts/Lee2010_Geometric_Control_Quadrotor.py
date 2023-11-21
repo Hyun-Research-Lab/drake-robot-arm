@@ -135,8 +135,8 @@ class QuadrotorController(LeafSystem):
             np.zeros(4) # output
         ))
         self.DeclareDiscreteState(initial_states)
-        self.DeclarePeriodicDiscreteUpdateEvent(period_sec=1e-2, offset_sec=5e-3, update=self.MyUpdate)
-        #self.DeclarePerStepDiscreteUpdateEvent(update=self.MyUpdate)
+        #self.DeclarePeriodicDiscreteUpdateEvent(period_sec=1e-2, offset_sec=5e-3, update=self.MyUpdate)
+        self.DeclarePerStepDiscreteUpdateEvent(update=self.MyUpdate)
         
         # output = [f1, f2, f3, f4]
         self.DeclareVectorOutputPort("y", BasicVector(4), self.CalcOutput)
@@ -190,7 +190,15 @@ class QuadrotorController(LeafSystem):
             xd_dot = np.zeros(3)
             xd_ddot = np.zeros(3)
             b1d = np.array([1,0,0])
-
+        elif SIM_NUMBER == 3:
+            # Flip back over trajectory
+            A = 5.0
+            B = -1.0
+            xd = np.array([0, A*np.cos(t), B*np.sin(2*t)])
+            xd_dot = np.array([0, -A*np.sin(t), 2*B*np.cos(2*t)])
+            xd_ddot = np.array([0, -A*np.cos(t), -4*B*np.sin(2*t)])
+            b1d = np.array([1,0,0])
+        
         # get the current of the quadrotor plant
         quadrotor_state = self.EvalVectorInput(context, 0).CopyToVector()
         x = quadrotor_state[:3]   # positions
@@ -383,6 +391,15 @@ def main():
             0,0,0,    # velocity
             0,0,0,0]  # d/dt quaternion
         )
+    elif SIM_NUMBER == 3:
+        R = RotationMatrix()
+        q = R.ToQuaternion().wxyz()
+        plant_context.get_mutable_continuous_state_vector().SetFromVector(
+            [0,5,0,    # position
+            q[0], q[1], q[2], q[3],  # unit quaternion (rotation)
+            0,0,0,    # velocity
+            0,0,0,0]  # d/dt quaternion
+        )
     
     simulator = Simulator(diagram, root_context)
     simulator.Initialize()
@@ -393,6 +410,8 @@ def main():
         simulator.AdvanceTo(10.0)
     elif SIM_NUMBER == 2:
         simulator.AdvanceTo(6.0)
+    elif SIM_NUMBER == 3:
+        simulator.AdvanceTo(4*np.pi)
     
     meshcat.StopRecording()
     meshcat.PublishRecording()
@@ -536,5 +555,6 @@ if __name__ == "__main__":
     # Simulation Mode #
     # 1 => Elliptic helix trajectory
     # 2 => Flip back over trajectory
-    SIM_NUMBER = 1
+    # 3 => Lissajous trajectory
+    SIM_NUMBER = 3
     main()
