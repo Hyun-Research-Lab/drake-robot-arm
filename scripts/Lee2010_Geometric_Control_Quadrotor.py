@@ -144,7 +144,7 @@ class QuadrotorController(LeafSystem):
         # functions to log for comparison to Lee2010
         self.DeclareVectorOutputPort("psi", BasicVector(1), self.OutputErrorFunction)
         self.DeclareVectorOutputPort("omega", BasicVector(6), self.OutputOmegaFunction)
-        self.DeclareVectorOutputPort("V2", BasicVector(1), self.OutputLyapunovV2Function)
+        self.DeclareVectorOutputPort("lyapunov", BasicVector(3), self.OutputLyapunovFunction)
 
         # controller paramters
         self.m = 4.34           # mass of quadrotor
@@ -280,8 +280,11 @@ class QuadrotorController(LeafSystem):
         psi = 0.5*np.trace(np.eye(3) - prev_Rd.transpose() @ R)
         output.set_value(np.array([psi]))
 
-    def OutputLyapunovV2Function(self, context, output):
-        # V2 = 0.5*e_omega @ J @ e_omega + kr Psi(R,Rd) + c2 * e_r @ e_omega
+    def OutputLyapunovFunction(self, context, output):
+        # V1 = 0.5*kx||ex||^2 + 0.5*m||ev||^2 + c1* ex . ev
+        # V2 = 0.5*e_omega . J @ e_omega + kr * Psi(R,Rd) + c2 * e_r . e_omega
+        # V3 = 0.5*||ex||^2 + 0.5*m||ev||^2
+
         # desired trajectory
         t = context.get_time()
 
@@ -357,11 +360,21 @@ class QuadrotorController(LeafSystem):
         e_R = 0.5*VeeMap(Rd.transpose() @ R - R.transpose() @ Rd)
         e_omega = omega - R.transpose() @ Rd @ omega_d
 
-        # calculate Lyapunov function
+        # V1 = 0.5*kx||ex||^2 + 0.5*m||ev||^2 + c1* ex . ev
+        # V2 = 0.5*e_omega . J @ e_omega + kr * Psi(R,Rd) + c2 * e_r . e_omega
+        # V3 = 0.5*||ex||^2 + 0.5*m||ev||^2
+
+        # calculate Lyapunov functions
+        c1 = 1
+        V1 = 0.5*self.k_x*np.linalg.norm(e_x)**2 + 0.5*self.m*np.linalg.norm(e_v)**2 + c1*np.dot(e_x, e_v)
+
         psi = np.trace(np.eye(3) - Rd.transpose() @ R)
-        c2 = 0.1
+        c2 = 1
         V2 = 0.5*np.dot(e_omega, self.J @ e_omega) + self.k_R * psi + c2*np.dot(e_R, e_omega)
-        output.set_value(np.array([V2]))
+
+        V3 = 0.5*np.linalg.norm(e_x)**2 + 0.5*self.m*np.linalg.norm(e_v)**2
+
+        output.set_value(np.array([V1,V2,V3]))
 
     def OutputOmegaFunction(self, context, output):
         # get the current of the quadrotor plant
@@ -441,7 +454,7 @@ def main():
     position_logger = LogVectorOutput(plant.get_output_port(), builder)
     omega_logger = LogVectorOutput(controller.GetOutputPort("omega"), builder)
     thrust_logger = LogVectorOutput(controller.GetOutputPort("y"), builder)
-    V2_logger = LogVectorOutput(controller.GetOutputPort("V2"), builder)
+    lyapunov_logger = LogVectorOutput(controller.GetOutputPort("lyapunov"), builder)
 
     meshcat = Meshcat()
     MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
@@ -569,15 +582,20 @@ def main():
         axs[3].set_ylim([-200,200])
         plt.show()
 
-        # plot the Lyapunov function v2
-        V2_log = V2_logger.FindLog(root_context)
-        fig, axs = plt.subplots(1)
-        fig.suptitle('Lyapunov Function V2')
-        t = V2_log.sample_times()
-        data = V2_log.data()
-        axs.plot(t, data[0,:])
-        axs.set_ylabel('V2')
+        # plot the lypunov functions
+        lyapunov_log = lyapunov_logger.FindLog(root_context)
+        fig, axs = plt.subplots(3)
+        fig.suptitle('Lyapunov Functions')
+        t = lyapunov_log.sample_times()
+        data = lyapunov_log.data()
+        axs[0].plot(t, data[0,:])
+        axs[0].set_ylabel('V1')
+        axs[1].plot(t, data[1,:])
+        axs[1].set_ylabel('V2')
+        axs[2].plot(t, data[2,:])
+        axs[2].set_ylabel('V3')
         plt.show()
+
 
     elif SIM_NUMBER == 2:
         # plot the psi log data
@@ -645,14 +663,18 @@ def main():
         axs[3].set_ylim([-50,50])
         plt.show()
 
-        # plot the Lyapunov function v2
-        V2_log = V2_logger.FindLog(root_context)
-        fig, axs = plt.subplots(1)
-        fig.suptitle('Lyapunov Function V2')
-        t = V2_log.sample_times()
-        data = V2_log.data()
-        axs.plot(t, data[0,:])
-        axs.set_ylabel('V2')
+        # plot the lypunov functions
+        lyapunov_log = lyapunov_logger.FindLog(root_context)
+        fig, axs = plt.subplots(3)
+        fig.suptitle('Lyapunov Functions')
+        t = lyapunov_log.sample_times()
+        data = lyapunov_log.data()
+        axs[0].plot(t, data[0,:])
+        axs[0].set_ylabel('V1')
+        axs[1].plot(t, data[1,:])
+        axs[1].set_ylabel('V2')
+        axs[2].plot(t, data[2,:])
+        axs[2].set_ylabel('V3')
         plt.show()
 
     while True:
