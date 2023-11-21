@@ -140,8 +140,11 @@ class QuadrotorController(LeafSystem):
         
         # output = [f1, f2, f3, f4]
         self.DeclareVectorOutputPort("y", BasicVector(4), self.CalcOutput)
+
+        # functions to log for comparison to Lee2010
         self.DeclareVectorOutputPort("psi", BasicVector(1), self.OutputErrorFunction)
         self.DeclareVectorOutputPort("omega", BasicVector(6), self.OutputOmegaFunction)
+        self.DeclareVectorOutputPort("V2", BasicVector(1), self.OutputLyapunovV2Function)
 
         # controller paramters
         self.m = 4.34           # mass of quadrotor
@@ -277,6 +280,89 @@ class QuadrotorController(LeafSystem):
         psi = 0.5*np.trace(np.eye(3) - prev_Rd.transpose() @ R)
         output.set_value(np.array([psi]))
 
+    def OutputLyapunovV2Function(self, context, output):
+        # V2 = 0.5*e_omega @ J @ e_omega + kr Psi(R,Rd) + c2 * e_r @ e_omega
+        # desired trajectory
+        t = context.get_time()
+
+        # parse previous state
+        prev_state = context.get_discrete_state().value()
+        prev_time = prev_state[0]
+        prev_Rd = prev_state[4:13].reshape(3,3)
+        dt = t - prev_time
+
+        if SIM_NUMBER == 1:
+            # Elliptical Helix Trajectory
+            xd = np.array([0.4*t, 0.4*np.sin(np.pi*t), 0.6*np.cos(np.pi*t)])
+            xd_dot = np.array([0.4, 0.4*np.pi*np.cos(np.pi*t), -0.6*np.pi*np.sin(np.pi*t)])
+            xd_ddot = np.array([0.0, -0.4*np.pi**2*np.sin(np.pi*t), -0.6*np.pi**2*np.cos(np.pi*t)])
+            #b1d = np.array([np.cos(np.pi*t), np.sin(np.pi*t), 0])
+            b1d = np.array([1,0,0])
+        elif SIM_NUMBER == 2:
+            # Flip back over trajectory
+            xd = np.zeros(3)
+            xd_dot = np.zeros(3)
+            xd_ddot = np.zeros(3)
+            b1d = np.array([1,0,0])
+        elif SIM_NUMBER == 3:
+            # Flip back over trajectory
+            A = 5.0
+            B = -1.0
+            xd = np.array([0, A*np.cos(t), B*np.sin(2*t)])
+            xd_dot = np.array([0, -A*np.sin(t), 2*B*np.cos(2*t)])
+            xd_ddot = np.array([0, -A*np.cos(t), -4*B*np.sin(2*t)])
+            b1d = np.array([1,0,0])
+        
+        # get the current of the quadrotor plant
+        quadrotor_state = self.EvalVectorInput(context, 0).CopyToVector()
+        x = quadrotor_state[:3]   # positions
+        q = quadrotor_state[3:7]  # quaternion (rotation)
+        x_dot = quadrotor_state[7:10] # velocity
+        q_dot = quadrotor_state[10:]  # d/dt quaternion
+
+        try:
+            R = RotationMatrix(Quaternion(q)).matrix()
+        except:
+            q = q / np.linalg.norm(q)
+            R = RotationMatrix(Quaternion(q)).matrix()
+
+        # q = q / np.linalg.norm(q)
+        q0,q1,q2,q3 = q
+        G = np.array([
+            [-q1, q0, q3, -q2],
+            [-q2, -q3, q0, q1],
+            [-q3, q2, -q1, q0]
+        ])
+        omega = 2 * G @ q_dot
+        
+        # calculate total thrust
+        e_x = x - xd
+        e_v = x_dot - xd_dot
+        e3 = np.array([0,0,1])
+        tmp = -self.k_x*e_x - self.k_v*e_v - self.m*self.g*e3 + self.m*xd_ddot
+        b3d = -tmp / np.linalg.norm(tmp)
+
+        # calculate Rd
+        b2d = np.cross(b3d, b1d) / np.linalg.norm( np.cross(b3d, b1d) )
+        Rd = np.array([np.cross(b2d, b3d), b2d, b3d]).transpose()
+
+        # estimate omega_d, omega_d_dot
+        if t < 5e-2:
+            omega_d = np.zeros(3)
+        else:
+            omega_d_hat = 1/dt * logm(prev_Rd.transpose() @ Rd)
+            omega_d = VeeMap(omega_d_hat)
+
+        # compute error terms
+        e_R = 0.5*VeeMap(Rd.transpose() @ R - R.transpose() @ Rd)
+        e_omega = omega - R.transpose() @ Rd @ omega_d
+
+        # calculate Lyapunov function
+        psi = np.trace(np.eye(3) - Rd.transpose() @ R)
+        c2 = 0.1
+        V2 = 0.5*np.dot(e_omega, self.J @ e_omega) + self.k_R * psi + c2*np.dot(e_R, e_omega)
+        output.set_value(np.array([V2]))
+
     def OutputOmegaFunction(self, context, output):
         # get the current of the quadrotor plant
         quadrotor_state = self.EvalVectorInput(context, 0).CopyToVector()
@@ -355,6 +441,7 @@ def main():
     position_logger = LogVectorOutput(plant.get_output_port(), builder)
     omega_logger = LogVectorOutput(controller.GetOutputPort("omega"), builder)
     thrust_logger = LogVectorOutput(controller.GetOutputPort("y"), builder)
+    V2_logger = LogVectorOutput(controller.GetOutputPort("V2"), builder)
 
     meshcat = Meshcat()
     MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
@@ -482,6 +569,16 @@ def main():
         axs[3].set_ylim([-200,200])
         plt.show()
 
+        # plot the Lyapunov function v2
+        V2_log = V2_logger.FindLog(root_context)
+        fig, axs = plt.subplots(1)
+        fig.suptitle('Lyapunov Function V2')
+        t = V2_log.sample_times()
+        data = V2_log.data()
+        axs.plot(t, data[0,:])
+        axs.set_ylabel('V2')
+        plt.show()
+
     elif SIM_NUMBER == 2:
         # plot the psi log data
         psi_log = psi_logger.FindLog(root_context)
@@ -548,6 +645,16 @@ def main():
         axs[3].set_ylim([-50,50])
         plt.show()
 
+        # plot the Lyapunov function v2
+        V2_log = V2_logger.FindLog(root_context)
+        fig, axs = plt.subplots(1)
+        fig.suptitle('Lyapunov Function V2')
+        t = V2_log.sample_times()
+        data = V2_log.data()
+        axs.plot(t, data[0,:])
+        axs.set_ylabel('V2')
+        plt.show()
+
     while True:
         pass
 
@@ -556,5 +663,5 @@ if __name__ == "__main__":
     # 1 => Elliptic helix trajectory
     # 2 => Flip back over trajectory
     # 3 => Lissajous trajectory
-    SIM_NUMBER = 3
+    SIM_NUMBER = 2
     main()
