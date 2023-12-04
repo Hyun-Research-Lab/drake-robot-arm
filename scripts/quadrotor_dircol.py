@@ -94,8 +94,8 @@ def traj_opt(plant, init_state, final_state, num_time_samples=21, minimum_time=0
     #overwrite x_traj, u_traj
     x_traj = None
     u_traj = None
-    context = plant.CreateDefaultContext()
-    dircol = DirectCollocation(
+    context = plant.CreateDefaultContext() 
+    dircol = DirectCollocation( #FIX ARG NAMES TO COMPILE?
         plant,
         context,
         num_time_samples=num_time_samples,
@@ -254,7 +254,6 @@ def MakeMultibodyQuadrotorLQR():
     m = plant.num_actuators()
     R = np.eye(4) #properllers are external, so they are not part of the plant actuators
 
-    # controller = world_builder.AddSystem(LinearQuadraticRegulator(diagram, context, Q, R))
     options = FiniteHorizonLinearQuadraticRegulatorOptions()
     options.Qf = Q
     final_state = np.array(nominal_state[:]) #test without array transform after
