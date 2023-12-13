@@ -438,14 +438,10 @@ def main():
     plant_context = plant.GetMyContextFromRoot(root_context=root_context)
     
     # set quadrotor initial conditions
-    R = RotationMatrix(np.array([
-            [1,0,0],
-            [0,-0.9995,-0.0314],
-            [0,0.0314,-0.9995]
-        ]))
+    R = RotationMatrix(np.eye(3))
     q = R.ToQuaternion().wxyz()
     plant_context.get_mutable_continuous_state_vector().SetFromVector(
-        [0,0,0,    # position
+        [1,0,0,    # position
         q[0], q[1], q[2], q[3],  # unit quaternion (rotation)
         0,0,0,    # velocity
         0,0,0,0]) # d/dt quaternion
@@ -454,12 +450,10 @@ def main():
     simulator.Initialize()
     meshcat.StartRecording()
     #simulator.set_target_realtime_rate(1.0)
-
     simulator.AdvanceTo(6.0)
     
     meshcat.StopRecording()
     meshcat.PublishRecording()
-
 
     # plot the psi log data
     psi_log = psi_logger.FindLog(root_context)
