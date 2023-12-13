@@ -441,7 +441,7 @@ def main():
     R = RotationMatrix(np.eye(3))
     q = R.ToQuaternion().wxyz()
     plant_context.get_mutable_continuous_state_vector().SetFromVector(
-        [1,0,0,    # position
+        [0,1,0,    # position
         q[0], q[1], q[2], q[3],  # unit quaternion (rotation)
         0,0,0,    # velocity
         0,0,0,0]) # d/dt quaternion
@@ -450,7 +450,7 @@ def main():
     simulator.Initialize()
     meshcat.StartRecording()
     #simulator.set_target_realtime_rate(1.0)
-    simulator.AdvanceTo(6.0)
+    simulator.AdvanceTo(4.0)
     
     meshcat.StopRecording()
     meshcat.PublishRecording()
