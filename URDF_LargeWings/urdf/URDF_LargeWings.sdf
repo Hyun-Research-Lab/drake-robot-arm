@@ -286,7 +286,7 @@
                </limit>
             </axis>
          </joint>
-         <!-- flapping pitch joint  -->
+         <!-- flapping pitch passive joint  -->
          <joint name="joint_LW_J_Pitch" type="revolute">
             <pose relative_to="LW_Flap">-0.00899999999999999 0.004 0 0 0 0</pose>
             <!-- <pose relative_to="LW_Flap">-0.00899999999999999 0.004 0 0.785398 0 0</pose> -->

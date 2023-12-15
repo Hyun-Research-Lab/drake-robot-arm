@@ -97,7 +97,7 @@ def process_externally_applied_spatial_force(value: ExternallyAppliedSpatialForc
 
 def MultiBodyParser(): #change proj dir and model from path/name
     builder = DiagramBuilder()
-    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=0.0)
+    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=0.0001)
     #Parse urdf
     project_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "URDF_LargeWings")
     parser = Parser(plant, scene_graph) #also adds geometry to scene_graph
@@ -110,33 +110,33 @@ def MultiBodyParser(): #change proj dir and model from path/name
     #     model_instance,
     #     use_ball_rpy=False,
     # )
-    # plant.mutable_gravity_field().set_gravity_vector([0, 0, 0])
+    # plant.mutable_gravity_field().set_gravity_vector([0, 0,-5])
     
-    left_wing_body = plant.GetBodyByName("LW_Pitch")
-    # cylinder_pose_lw = RigidTransform(RotationMatrix(), [-0.06, -0.02, 0.05]) #z is facing, y is up , x is in
-    cylinder_pose_lw = RigidTransform(RotationMatrix(), [0.0, -0.0, 0.02]) #z is facing, y is up , x is in
-    cylinder_pose_rw = RigidTransform(RotationMatrix(), [0.0, -0.0, 0.02]) #z is facing, y is up , x is in
-    # cylinder_pose_rw = RigidTransform(RotationMatrix(), [-0.06, -0.02, 0.05]) #z is facing, y is up , x is in
-    cylinder_shape = Cylinder(0.001, 0.04)
-    geometry_id_lw = plant.RegisterVisualGeometry(left_wing_body, cylinder_pose_lw, cylinder_shape, "wing_cylinder", [0, 1, 0, 0.5])
+    # left_wing_body = plant.GetBodyByName("LW_Pitch")
+    # # cylinder_pose_lw = RigidTransform(RotationMatrix(), [-0.06, -0.02, 0.05]) #z is facing, y is up , x is in
+    # cylinder_pose_lw = RigidTransform(RotationMatrix(), [0.0, -0.0, 0.02]) #z is facing, y is up , x is in
+    # cylinder_pose_rw = RigidTransform(RotationMatrix(), [0.0, -0.0, 0.02]) #z is facing, y is up , x is in
+    # # cylinder_pose_rw = RigidTransform(RotationMatrix(), [-0.06, -0.02, 0.05]) #z is facing, y is up , x is in
+    # cylinder_shape = Cylinder(0.001, 0.04)
+    # geometry_id_lw = plant.RegisterVisualGeometry(left_wing_body, cylinder_pose_lw, cylinder_shape, "wing_cylinder", [0, 1, 0, 0.5])
     
-    right_wing_body = plant.GetBodyByName("RW_Pitch")
-    geometry_id_rw = plant.RegisterVisualGeometry(right_wing_body, cylinder_pose_rw, cylinder_shape, "wing_cylinder", [0, 1, 0, 0.5])
+    # right_wing_body = plant.GetBodyByName("RW_Pitch")
+    # geometry_id_rw = plant.RegisterVisualGeometry(right_wing_body, cylinder_pose_rw, cylinder_shape, "wing_cylinder", [0, 1, 0, 0.5])
 
-    #can visually verify that the cylinder is in the right place (cp)
-    center_pressure_body_lw = [[-0.00833, -0.025, 0], [-0.02499, -0.025, 0], [-0.04165, -0.025, 0], [-0.05831, -0.025, 0], [-0.07497, -0.025, 0], [-0.09163, -0.025, 0], [-0.10829, -0.025, 0], [-0.12495, -0.025, 0], [-0.14161, -0.025, 0]]
-    center_pressure_body_rw = [[0.00833, -0.025, 0], [0.02499, -0.025, 0], [0.04165, -0.025, 0], [0.05831, -0.025, 0], [0.07497, -0.025, 0], [0.09163, -0.025, 0], [0.10829, -0.025, 0], [0.12495, -0.025, 0], [0.14161, -0.025, 0]]
+    # #can visually verify that the cylinder is in the right place (cp)
+    # center_pressure_body_lw = [[-0.00833, -0.025, 0], [-0.02499, -0.025, 0], [-0.04165, -0.025, 0], [-0.05831, -0.025, 0], [-0.07497, -0.025, 0], [-0.09163, -0.025, 0], [-0.10829, -0.025, 0], [-0.12495, -0.025, 0], [-0.14161, -0.025, 0]]
+    # center_pressure_body_rw = [[0.00833, -0.025, 0], [0.02499, -0.025, 0], [0.04165, -0.025, 0], [0.05831, -0.025, 0], [0.07497, -0.025, 0], [0.09163, -0.025, 0], [0.10829, -0.025, 0], [0.12495, -0.025, 0], [0.14161, -0.025, 0]]
 
 
-    for i,cp in enumerate(center_pressure_body_lw):
-        cp[2] = 0.02
-        cylinder_pose_lw = RigidTransform(RotationMatrix(), cp)
-        geometry_id_lw = plant.RegisterVisualGeometry(left_wing_body, cylinder_pose_lw, cylinder_shape, "wing_cylinder" + str(i), [0, 1, 1, 0.5])
-    for i,cp in enumerate(center_pressure_body_rw):
-        cp[2] = 0.02
+    # for i,cp in enumerate(center_pressure_body_lw):
+    #     cp[2] = 0.02
+    #     cylinder_pose_lw = RigidTransform(RotationMatrix(), cp)
+    #     geometry_id_lw = plant.RegisterVisualGeometry(left_wing_body, cylinder_pose_lw, cylinder_shape, "wing_cylinder" + str(i), [0, 1, 1, 0.5])
+    # for i,cp in enumerate(center_pressure_body_rw):
+    #     cp[2] = 0.02
 
-        cylinder_pose_lw = RigidTransform(RotationMatrix(), cp)
-        geometry_id_lw = plant.RegisterVisualGeometry(right_wing_body, cylinder_pose_lw, cylinder_shape, "wing_cylinder" + str(i), [0, 1, 1, 0.5])
+    #     cylinder_pose_lw = RigidTransform(RotationMatrix(), cp)
+    #     geometry_id_lw = plant.RegisterVisualGeometry(right_wing_body, cylinder_pose_lw, cylinder_shape, "wing_cylinder" + str(i), [0, 1, 1, 0.5])
     plant.Finalize()
 
     #Info check
@@ -211,10 +211,10 @@ def Flap():
     simulator.set_target_realtime_rate(1.0)
     context = simulator.get_mutable_context()
     meshcat.StartRecording()
-    simulator.set_target_realtime_rate(0.25)
+    # simulator.set_target_realtime_rate(0.25)
     simulator.Initialize()
     print("init")
-    simulator.AdvanceTo(2)
+    simulator.AdvanceTo(6)
     print("Done calc")
     meshcat.PublishRecording()
     print("Done record")
@@ -273,7 +273,7 @@ class AerodynamicsSystem(LeafSystem):
         lw_info = (self.left_wing_body, self.center_pressure_body_lw, blade_area_list_lw, velocity_world_lw, up_vector_lw)
 
         external_force_list = []
-        init_time = time.time()
+        # init_time = time.time()
         for body_info in [rw_info, lw_info]:
             body = body_info[0]
             center_pressure_body = body_info[1]
@@ -284,6 +284,7 @@ class AerodynamicsSystem(LeafSystem):
             for i, cp_coord in enumerate(center_pressure_body):
                 #we take center pressure, get linear velocity and rotational velocity at wing origin, then map rotational to linear from origin to
                 # center pressure, then add the two linear velocities together to get total linear velocity at center pressure
+                #instead of cross, maybe just multiply?
                 wing_rotational_v_mapped = np.cross(velocity_world.rotational(), cp_coord) #additional velocity at cp from origin
                 wing_cp_linear_v = velocity_world.translational() + wing_rotational_v_mapped #total lin velocity at cp
                 vel_dot_up = np.dot(wing_cp_linear_v, up_vector) #projected linear vel onto up vec
@@ -300,7 +301,7 @@ class AerodynamicsSystem(LeafSystem):
                 external_force.p_BoBq_B = cp_coord
                 external_force.F_Bq_W = SpatialForce([0,0,0], flap_drag_force) 
                 external_force_list.append(external_force)
-            # wing_time = time.time()
+        #     wing_time = time.time()
         # end_time = time.time()
         # print("time taken", end_time - init_time)
         # print("time taken wing", wing_time - first_time)
