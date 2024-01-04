@@ -16,4 +16,4 @@ PyYAML==6.0.1
 six==1.16.0
 u-msgpack-python==2.8.0
 scipy
-python-tk
+# python-tk
