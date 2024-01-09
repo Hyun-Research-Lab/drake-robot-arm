@@ -22,6 +22,18 @@ models_filegroup(
     
 )
 
+drake_cc_library(
+    name = "aerodynamics_system",
+    srcs = ["aerodynamics_system.cc"],
+    hdrs = ["aerodynamics_system.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//systems/framework:leaf_system",
+        "//systems/framework:vector",
+    ],
+)
+
+
 drake_cc_binary(
     name = "sim",
     srcs = ["main.cc"],
@@ -40,3 +52,4 @@ drake_cc_binary(
         # ... other necessary deps
     ],
 )
+

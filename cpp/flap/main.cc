@@ -12,8 +12,10 @@
 // "multibody" namespace is ambiguous here without "drake::".
 using drake::multibody::AddMultibodyPlantSceneGraph;
 using drake::multibody::Parser;
+
 namespace drake {
 namespace flapping {
+
 using Eigen::Vector3d;
 using geometry::SceneGraph;
 
