@@ -1,1 +1,20 @@
-workspace(name = "drake")
+workspace(name = "drake_flap")
+
+local_repository(
+    name = "drake",
+    path = "/home/darin/Github/drake", #change to your local drake repo dir or use http_archive
+)
+
+load("default.bzl", "add_default_workspace")
+
+add_default_workspace()
+
+load("@bazel_skylib//lib:versions.bzl", "versions")
+versions.check(minimum_bazel_version = "5.1")
+
+# The cargo_universe programs are only used by Drake's new_release tooling, not
+# by any compilation rules. As such, we can put it directly into the WORKSPACE
+# instead of into our `//tools/workspace:default.bzl` repositories.
+load("@rules_rust//crate_universe:repositories.bzl", "crate_universe_dependencies")  # noqa
+
+crate_universe_dependencies(bootstrap = True)

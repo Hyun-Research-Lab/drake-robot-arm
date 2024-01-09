@@ -2,3 +2,8 @@
 
 # Understanding Bazel
 `https://bazel.build/start/cpp`
+
+# Useful cmds
+
+`bazel query //folder_name:*`
+`bazel build //folder_name:all`

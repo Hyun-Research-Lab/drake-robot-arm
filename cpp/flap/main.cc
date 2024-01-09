@@ -1,14 +1,16 @@
 //Entrypoint
 
+#include <gflags/gflags.h>
 // #include "aerodynamics.h"
 // #include <drake/systems
-
+// #include "drake/examples/acrobot/acrobot_geometry.h"
 namespace drake {
 namespace flapping {
-using drake::multibody::MultibodyPlant;
+// #include "drake/multibody/plant/multibody_plant.h"
+
 //Can add define constants
 int DoMain() {
-    return 0
+    return 0;
 }
 }
 }
